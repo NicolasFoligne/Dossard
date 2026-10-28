@@ -40,7 +40,7 @@ export function vider(el, ...enfants) {
 export function toast(message, { erreur = false } = {}) {
   const zone = document.getElementById('toasts');
   const t = h('div.toast', { role: 'status', class: erreur ? 'toast-erreur' : '' }, message);
-  zone.append(t);
+  zone.replaceChildren(t); // un seul message à la fois
   setTimeout(() => t.classList.add('sortie'), 2600);
   setTimeout(() => t.remove(), 3000);
 }
