@@ -64,7 +64,7 @@ export const nombre = (n, decimales = 1) => (decimales === 2 ? fmtNombre2 : fmtN
 // Accepte « 12,5 » comme « 12.5 ». Renvoie null si vide ou invalide.
 export function lireNombre(texte) {
   if (texte === null || texte === undefined) return null;
-  const t = String(texte).trim().replace(',', '.');
+  const t = String(texte).replace(/[\s  ]/g, '').replace(',', '.');
   if (t === '') return null;
   const n = Number(t);
   return Number.isFinite(n) ? n : null;

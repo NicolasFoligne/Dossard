@@ -75,4 +75,55 @@ uniquement depuis son téléphone.
 
 _(Section tenue à jour au fil des sessions.)_
 
-- À compléter au fil du développement.
+### Règles métier précisées avec l'utilisateur (lot 1)
+
+- **Délais minimaux de préparation** (alerte « délai trop court », barème standard) :
+  5 km : 6 semaines · 10 km : 8 · semi-marathon : 10 · marathon : 16 · trail : 10 (< 30 km), 16 (< 60 km), 20 au-delà · autre : 6 ·
+  triathlon XS : 6 · S : 8 · M : 12 · L : 16 · XL : 20 · XXL : 24.
+  Pour un objectif « À démarrer », le délai se mesure depuis aujourd'hui ; pour un objectif « En cours », depuis sa date de démarrage.
+- **Avancement** d'un objectif en cours : barre du temps écoulé entre démarrage et épreuve, jours/semaines restants,
+  nombre de séances et volume réalisés rattachés à l'objectif.
+- **Mutualisation** : le renforcement compte pour tous les objectifs.
+  Course → course + renforcement. Triathlon → course, vélo, natation, enchaînement, renforcement.
+  Le rattachement est calculé à l'enregistrement de la séance (objectifs « En cours » à ce moment-là).
+  À la modification d'une séance, les liens vers des objectifs déjà terminés sont conservés (historique).
+- **Semainier insuffisant** : moins de jours disponibles que le plafond de séances, OU une discipline nécessaire
+  à un objectif en cours n'est possible aucun jour disponible (course : course ; triathlon : course, vélo, natation).
+- **Épreuve passée non clôturée** : tout objectif non terminé dont la date d'épreuve est dépassée.
+- **Rappel de sauvegarde** : si des données existent et qu'aucun export n'a eu lieu depuis 30 jours
+  (ou depuis la première utilisation si aucun export n'a jamais été fait).
+- **Distances FFTri préremplies** (modifiables) : XS 400 m / 10 km / 2,5 km · S 750 m / 20 km / 5 km ·
+  M 1 500 m / 40 km / 10 km · L 3 000 m / 80 km / 30 km · XL 4 000 m / 120 km / 30 km · XXL 3 800 m / 180 km / 42,195 km.
+- Lier une séance réalisée à une séance prévue passe celle-ci à « faite » ; supprimer ou délier la séance réalisée la remet « à faire ».
+- Allure : course en min/km, natation en min/100 m, vélo et enchaînement en km/h, rien pour le renforcement.
+- Semaine du lundi au dimanche. Dates stockées en chaînes locales `AAAA-MM-JJ`, durées en secondes, distances en km
+  (la natation est saisie et affichée en mètres).
+
+### Architecture
+
+- `index.html`, `manifest.webmanifest`, `sw.js` à la racine ; `.nojekyll` pour que GitHub Pages serve les fichiers tels quels.
+- `js/` (modules ES natifs, imports relatifs) :
+  - `format.js` : formats français (dates, durées, allures, nombres) ;
+  - `domaine.js` : règles métier pures (référentiels, cycle de vie, mutualisation, allure, alertes, agrégats) ;
+  - `sauvegarde.js` : construction et validation de l'export JSON (pur) ;
+  - `db.js` : IndexedDB (base `dossard`) ; magasins `kv` (profil, semainier, réglages), `objectifs`, `prevues`, `realisees`
+    — exportés — et `appareil` (clé API, date du dernier export, première utilisation) — **jamais exporté** ;
+  - `magasin.js` : état en mémoire + actions qui écrivent dans IndexedDB ;
+  - `ui.js` : création d'éléments, feuilles modales, champs ; `miseajour.js` : service worker et bandeau de mise à jour ;
+  - `ecrans/` : accueil, plan, objectifs, historique, réglages, formulaires.
+- Navigation par ancre (`#/accueil`, `#/plan`, `#/objectifs`, `#/historique`, `#/reglages[/profil|semainier|ia|sauvegarde|apropos]`).
+- L'onglet **Plan** liste les séances prévues (ajout manuel au lot 1, génération IA au lot 2).
+
+### Livraison et mises à jour
+
+- À chaque livraison : incrémenter `VERSION` dans `sw.js` **et** dans `js/version.js` (un test vérifie qu'elles sont identiques).
+- Tout nouveau fichier de l'application doit être ajouté à la liste `FICHIERS` de `sw.js` (vérifié par le test statique).
+- Le service worker n'active pas la nouvelle version tout seul : bandeau « Nouvelle version disponible » → bouton « Mettre à jour ».
+
+### Tests (à lancer avant chaque livraison)
+
+- `node tests/regles.test.js` : règles métier (cycle de vie, mutualisation, allure, alertes, export/import).
+- `node tests/statique.test.js` : manifest, service worker, chemins relatifs, version, absence de secrets.
+- `node tests/e2e.cjs [dossier-captures]` : parcours complet dans Chromium (Playwright), servi sous `/dossard/`,
+  hors ligne et mise à jour compris ; échoue à la moindre erreur JavaScript ou HTTP.
+- `node outils/generer-icones.cjs icons` : régénère les PNG à partir de `icons/icone.svg`.
