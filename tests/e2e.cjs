@@ -35,7 +35,7 @@ async function main() {
   try {
     const contexte = await navigateur.newContext({
       viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
-      locale: 'fr-FR', timezoneId: 'Europe/Paris', acceptDownloads: true,
+      locale: 'fr-FR', timezoneId: 'Europe/Paris', acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'],
     });
     const page = await contexte.newPage();
     page.on('pageerror', e => erreurs.push(`pageerror: ${e.message}`));
@@ -68,6 +68,11 @@ async function main() {
     await page.getByRole('button', { name: 'Démarrer l\'objectif' }).click();
     await page.locator('.boite').getByRole('button', { name: 'Démarrer' }).click();
     await page.locator('.objectif[data-statut=en_cours]', { hasText: 'Semi de Lyon' }).waitFor();
+    // Sans clé API, le démarrage ouvre la génération du plan en mode secours.
+    await page.locator('.feuille details.secours[open]').waitFor();
+    await page.getByText('Aucune clé API enregistrée').waitFor();
+    await page.locator('.feuille').getByRole('button', { name: 'Fermer' }).click();
+    await page.locator('.feuille').waitFor({ state: 'detached' });
 
     etape('Objectif triathlon : distances FFTri préremplies, délai court signalé');
     await page.getByRole('button', { name: '＋ Nouvel objectif' }).click();
@@ -87,7 +92,7 @@ async function main() {
 
     etape('Séance prévue ajoutée à la main');
     await page.getByRole('link', { name: 'Plan', exact: true }).click();
-    await page.getByRole('button', { name: '＋ Ajouter une séance prévue' }).click();
+    await page.getByRole('button', { name: '＋ Ajouter une séance à la main' }).click();
     await page.locator('.feuille [name=type]').selectOption('fractionne');
     await page.locator('.feuille [name=duree_m]').fill('45');
     await page.locator('.feuille [name=distance]').fill('8');
@@ -152,6 +157,94 @@ async function main() {
     await page.goto(`${URL_APP}#/accueil`);
     await page.locator('.alerte', { hasText: '1 jour disponible pour un plafond de 3' }).waitFor();
 
+    etape('Plan IA : génération (API simulée), aperçu, validation');
+    // Plan conforme calculé dans la page à partir du contexte réel (mêmes modules que l'application).
+    const planConforme = () => page.evaluate(async () => {
+      const IA = await import('./js/ia.js');
+      const M = await import('./js/magasin.js');
+      const F = await import('./js/format.js');
+      const c = IA.construireContexte(M.etat, F.aujourdhui());
+      const seances = c.calendrier.flatMap(sem => sem.jours.slice(0, sem.plafondRestant ?? 7).map(j => ({
+        date: j.date, discipline: j.disciplines[0], type: 'endurance', intensite: 'facile', dureeMin: Math.min(40, j.dureeMaxMin ?? 40),
+        distanceKm: 7, echauffement: '10 min très facile', corps: '25 min en endurance fondamentale', retourCalme: '5 min de marche', objectifIds: c.objectifs.map(o => o.id),
+      })));
+      return { analyse: 'Temps visé ambitieux mais crédible.', phases: [{ nom: 'foncière', debut: c.debut, fin: F.ajouterJours(c.debut, 27), description: 'Construire la base' }], seances };
+    });
+    const sse = texte => [
+      { type: 'message_start', message: { id: 'msg_test' } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      ...texte.match(/[\s\S]{1,400}/g).map(t => ({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: t } })),
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
+      { type: 'message_stop' },
+    ].map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+    const appelsApi = [];
+    await page.route('https://api.anthropic.com/v1/messages', async route => {
+      const req = route.request();
+      appelsApi.push({ entetes: req.headers(), corps: req.postDataJSON() });
+      const plan = await planConforme();
+      await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(JSON.stringify(plan)) });
+    });
+    await page.getByRole('link', { name: 'Plan', exact: true }).click();
+    await page.getByRole('button', { name: 'Générer le plan', exact: true }).click();
+    await page.getByRole('button', { name: 'Générer le plan avec l\'IA' }).click();
+    const boutonValider = page.getByRole('button', { name: /^Valider le plan \(\d+ séances\)$/ });
+    await boutonValider.waitFor();
+    assert.equal(appelsApi.length, 1);
+    assert.equal(appelsApi[0].entetes['x-api-key'], 'cle-de-test-locale');
+    assert.equal(appelsApi[0].entetes['anthropic-version'], '2023-06-01');
+    assert.equal(appelsApi[0].entetes['anthropic-dangerous-direct-browser-access'], 'true');
+    assert.equal(appelsApi[0].corps.model, 'claude-sonnet-5-5');
+    assert.equal(appelsApi[0].corps.stream, true);
+    assert.match(appelsApi[0].corps.messages[0].content, /Semi de Lyon/);
+    assert.ok(!appelsApi[0].corps.messages[0].content.includes('Tri de Paris'), 'seuls les objectifs en cours sont envoyés');
+    await page.getByText('Temps visé ambitieux mais crédible.').waitFor();
+    await capture('11-apercu-plan');
+    const nbSeancesIa = Number((await boutonValider.textContent()).match(/\d+/)[0]);
+    assert.ok(nbSeancesIa >= 15, `séances générées : ${nbSeancesIa}`);
+    await boutonValider.click();
+    await page.locator('.toast', { hasText: 'Plan enregistré' }).waitFor();
+    await page.getByText('Phase actuelle : foncière').waitFor();
+    assert.ok(await page.locator('.ecran .etiquette-ia').count() < nbSeancesIa); // 4 semaines affichées d'emblée
+    await page.getByRole('button', { name: /^Afficher les \d+ semaines suivantes$/ }).click();
+    assert.equal(await page.locator('.ecran .etiquette-ia').count(), nbSeancesIa);
+    // La séance ajoutée à la main (faite) est toujours là.
+    await page.locator('.ecran .ligne-seance', { hasText: 'Fractionné' }).waitFor();
+    await capture('12-plan-ia');
+
+    etape('Plan IA : « Démarrer l\'objectif » relance la génération pour tous les objectifs en cours');
+    await page.getByRole('link', { name: 'Objectifs', exact: true }).click();
+    await page.locator('.objectif', { hasText: 'Tri de Paris' }).getByRole('button', { name: 'Démarrer l\'objectif' }).click();
+    await page.locator('.boite').getByRole('button', { name: 'Démarrer' }).click();
+    await boutonValider.waitFor();
+    assert.equal(appelsApi.length, 2);
+    assert.ok(['Semi de Lyon', 'Tri de Paris'].every(n => appelsApi[1].corps.messages[0].content.includes(n)), 'plan mutualisé : les deux objectifs en cours sont envoyés');
+    await boutonValider.click();
+    await page.locator('.toast', { hasText: 'Plan enregistré' }).waitFor();
+    // Recalcul : les séances IA à venir sont remplacées, pas dupliquées.
+    const iaApres = await page.evaluate(async () => (await import('./js/magasin.js')).etat.prevues.filter(p => p.source === 'ia').length);
+    assert.equal(iaApres, nbSeancesIa);
+
+    etape('Plan IA : mode secours (copier le prompt, coller la réponse)');
+    await page.getByRole('button', { name: 'Recalculer le plan', exact: true }).click();
+    await page.locator('.secours summary').click();
+    await page.getByRole('button', { name: 'Copier le prompt' }).click();
+    await page.locator('.toast', { hasText: 'Prompt copié' }).waitFor();
+    const prompt = await page.evaluate(() => navigator.clipboard.readText());
+    assert.match(prompt, /Réponds uniquement par un objet JSON/);
+    assert.match(prompt, /Tri de Paris/);
+    assert.ok(!prompt.includes('cle-de-test-locale'));
+    await page.locator('.feuille [name=reponse]').fill('{"analyse":"","phases":[],"seances":[{"date":"2000-01-01","discipline":"course","type":"endurance","intensite":"facile","dureeMin":30,"distanceKm":null,"echauffement":"","corps":"","retourCalme":"","objectifIds":[]}]}');
+    await page.getByRole('button', { name: 'Analyser la réponse' }).click();
+    await page.getByText(/Réponse rejetée : .*2000-01-01/).waitFor();
+    await page.locator('.feuille [name=reponse]').fill('Voici le plan :\n```json\n' + JSON.stringify(await planConforme()) + '\n```');
+    await page.getByRole('button', { name: 'Analyser la réponse' }).click();
+    await boutonValider.click();
+    await page.locator('.toast', { hasText: 'Plan enregistré' }).waitFor();
+    await page.getByText(/Généré le .*\(mode secours\)/).waitFor();
+    assert.equal(appelsApi.length, 2, 'le mode secours n\'appelle pas l\'API');
+    await page.unroute('https://api.anthropic.com/v1/messages');
+
     etape('Cycle de vie : terminer avec résultat');
     await page.getByRole('link', { name: 'Objectifs', exact: true }).click();
     await page.locator('.objectif', { hasText: 'Semi de Lyon' }).getByRole('button', { name: 'Terminer' }).click();
@@ -188,7 +281,7 @@ async function main() {
 
     await page.goto(`${URL_APP}#/reglages/sauvegarde`);
     await page.locator('input[type=file]').setInputFiles(cheminExport);
-    await page.locator('.boite', { hasText: '2 objectif(s), 1 séance(s) prévue(s), 2 séance(s) réalisée(s)' }).waitFor();
+    await page.locator('.boite', { hasText: /2 objectif\(s\), \d+ séance\(s\) prévue\(s\), 2 séance\(s\) réalisée\(s\)/ }).waitFor();
     await page.locator('.boite').getByRole('button', { name: 'Annuler' }).click();
     await page.locator('input[type=file]').setInputFiles(cheminExport);
     await page.locator('.boite').getByRole('button', { name: 'Remplacer mes données' }).click();
