@@ -93,11 +93,34 @@ _(Section tenue à jour au fil des sessions.)_
 - **Rappel de sauvegarde** : si des données existent et qu'aucun export n'a eu lieu depuis 30 jours
   (ou depuis la première utilisation si aucun export n'a jamais été fait).
 - **Distances FFTri préremplies** (modifiables) : XS 400 m / 10 km / 2,5 km · S 750 m / 20 km / 5 km ·
-  M 1 500 m / 40 km / 10 km · L 3 000 m / 80 km / 30 km · XL 4 000 m / 120 km / 30 km · XXL 3 800 m / 180 km / 42,195 km.
+  M 1 500 m / 40 km / 10 km · L 1 900 m / 90 km / 21,1 km (format « half » / 70.3, choisi par l'utilisateur au lot 2) ·
+  XL 4 000 m / 120 km / 30 km · XXL 3 800 m / 180 km / 42,195 km.
 - Lier une séance réalisée à une séance prévue passe celle-ci à « faite » ; supprimer ou délier la séance réalisée la remet « à faire ».
 - Allure : course en min/km, natation en min/100 m, vélo et enchaînement en km/h, rien pour le renforcement.
 - Semaine du lundi au dimanche. Dates stockées en chaînes locales `AAAA-MM-JJ`, durées en secondes, distances en km
   (la natation est saisie et affichée en mètres).
+
+### Génération du plan par l'IA (lot 2)
+
+- **Horizon** : le plan couvre d'aujourd'hui à la veille de la dernière épreuve des objectifs en cours ; aucune séance un jour d'épreuve.
+- **Recalcul** : seules les séances **IA futures « à faire »** sont remplacées. Les séances passées, réalisées, faites,
+  ratées ou ajoutées à la main sont conservées ; les séances manuelles futures sont envoyées à l'IA comme contraintes.
+- **« Démarrer l'objectif »** : l'objectif démarre, puis la feuille « Plan d'entraînement » s'ouvre ; avec une clé, la génération
+  se lance automatiquement ; sans clé, la feuille s'ouvre sur le mode secours (« Copier le prompt » / « Coller la réponse »).
+- **Calendrier envoyé** : l'application calcule elle-même les créneaux autorisés (date, jour, durée maximale restante,
+  disciplines possibles) et le plafond restant par semaine, déduction faite des séances conservées et réalisées.
+  L'IA ne choisit que parmi ces créneaux ; la réponse est rejetée sinon.
+- **Validation stricte** avant aperçu : dates du calendrier, discipline possible ce jour, somme des durées ≤ durée max,
+  nombre de séances ≤ plafond restant, énumérations (discipline, type, intensité), durée entière positive.
+  Les `objectifIds` sont restreints aux objectifs en cours compatibles avec la discipline (à défaut : tous les compatibles).
+- **Points d'attention** (non bloquants, affichés dans l'aperçu) : hausse de volume hebdomadaire > 15 %, moins de 70 % du volume en facile.
+- **Appel API** : `fetch` direct en streaming SSE, `max_tokens` 64 000, sortie JSON structurée (`output_config.format` json_schema)
+  et repli serveur en cas de refus (`fallbacks: "default"`, en-tête `anthropic-beta: server-side-fallback-2026-07-01`).
+  Si l'API refuse ces options (400) ou après une coupure réseau, nouvel appel sans elles.
+  Un plan invalide (ou tronqué) déclenche **un** nouvel essai, qui reçoit la liste des motifs de rejet. Refus du modèle : message d'erreur.
+- Pendant la génération : progression (réflexion, nombre de séances reçues), écran maintenu allumé (Wake Lock), bouton « Arrêter ».
+- Les métadonnées du dernier plan validé (analyse, phases, date, modèle) sont stockées dans `kv` sous la clé `plan` et exportées.
+  La phase en cours est affichée sur l'accueil et dans l'onglet Plan ; les séances IA portent l'étiquette « IA ».
 
 ### Architecture
 
@@ -106,13 +129,15 @@ _(Section tenue à jour au fil des sessions.)_
   - `format.js` : formats français (dates, durées, allures, nombres) ;
   - `domaine.js` : règles métier pures (référentiels, cycle de vie, mutualisation, allure, alertes, agrégats) ;
   - `sauvegarde.js` : construction et validation de l'export JSON (pur) ;
+  - `ia.js` : contexte envoyé, prompt, schéma JSON de la réponse, validation, remplacement des séances (pur) ;
+  - `ia-api.js` : appel de l'API Anthropic en streaming, essais et gestion des erreurs ;
   - `db.js` : IndexedDB (base `dossard`) ; magasins `kv` (profil, semainier, réglages), `objectifs`, `prevues`, `realisees`
-    — exportés — et `appareil` (clé API, date du dernier export, première utilisation) — **jamais exporté** ;
+    — exportés (dont `kv.plan`) — et `appareil` (clé API, date du dernier export, première utilisation) — **jamais exporté** ;
   - `magasin.js` : état en mémoire + actions qui écrivent dans IndexedDB ;
   - `ui.js` : création d'éléments, feuilles modales, champs ; `miseajour.js` : service worker et bandeau de mise à jour ;
-  - `ecrans/` : accueil, plan, objectifs, historique, réglages, formulaires.
+  - `ecrans/` : accueil, plan, planIa (génération, mode secours, aperçu), objectifs, historique, réglages, formulaires.
 - Navigation par ancre (`#/accueil`, `#/plan`, `#/objectifs`, `#/historique`, `#/reglages[/profil|semainier|ia|sauvegarde|apropos]`).
-- L'onglet **Plan** liste les séances prévues (ajout manuel au lot 1, génération IA au lot 2).
+- L'onglet **Plan** : carte du plan IA (phase, analyse, « Recalculer le plan »), séances prévues (4 semaines affichées, puis bouton « Afficher les semaines suivantes »), ajout manuel.
 
 ### Livraison et mises à jour
 
@@ -123,7 +148,8 @@ _(Section tenue à jour au fil des sessions.)_
 ### Tests (à lancer avant chaque livraison)
 
 - `node tests/regles.test.js` : règles métier (cycle de vie, mutualisation, allure, alertes, export/import).
+- `node tests/ia.test.js` : génération IA (contexte, validation stricte, remplacement, streaming et essais avec API simulée).
 - `node tests/statique.test.js` : manifest, service worker, chemins relatifs, version, absence de secrets.
 - `node tests/e2e.cjs [dossier-captures]` : parcours complet dans Chromium (Playwright), servi sous `/dossard/`,
-  hors ligne et mise à jour compris ; échoue à la moindre erreur JavaScript ou HTTP.
+  génération IA (API simulée), mode secours, hors ligne et mise à jour compris ; échoue à la moindre erreur JavaScript ou HTTP.
 - `node outils/generer-icones.cjs icons` : régénère les PNG à partir de `icons/icone.svg`.
