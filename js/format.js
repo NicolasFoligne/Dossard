@@ -45,10 +45,13 @@ const fmtDateLongue = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: '
 const fmtDateCourte = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 const fmtDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 const fmtJourSemaine = new Intl.DateTimeFormat('fr-FR', { weekday: 'short' });
+const fmtJourMois = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
 
 export const dateLongue = iso => (iso ? fmtDateLongue.format(depuisIso(iso)) : '');
 export const dateCourte = iso => (iso ? fmtDateCourte.format(depuisIso(iso)) : '');
 export const dateFr = iso => (iso ? fmtDate.format(depuisIso(iso)) : '');
+export const jourMois = iso => (iso ? fmtJourMois.format(depuisIso(iso)) : '');
+export const capitaliser = s => s.charAt(0).toUpperCase() + s.slice(1);
 export const jourCourt = iso => fmtJourSemaine.format(depuisIso(iso)).replace('.', '');
 
 export function dateHeureFr(horodatage) {

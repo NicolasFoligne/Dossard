@@ -4,11 +4,13 @@ import * as db from './db.js';
 import * as D from './domaine.js';
 import { aujourdhui } from './format.js';
 import { construireExport } from './sauvegarde.js';
+import { remplacement } from './ia.js';
 
 export const etat = {
   profil: D.profilParDefaut(),
   semainier: D.semainierParDefaut(),
   reglages: D.reglagesParDefaut(),
+  plan: null, // dernier plan IA validé : analyse, phases, date de génération
   objectifs: [],
   prevues: [],
   realisees: [],
@@ -24,6 +26,7 @@ export async function charger() {
   etat.profil = { ...D.profilParDefaut(), ...d.profil, materiel: { ...D.profilParDefaut().materiel, ...d.profil?.materiel } };
   etat.semainier = d.semainier ?? D.semainierParDefaut();
   etat.reglages = { ...D.reglagesParDefaut(), ...d.reglages };
+  etat.plan = d.plan ?? null;
   etat.objectifs = d.objectifs;
   etat.prevues = d.prevues;
   etat.realisees = d.realisees;
@@ -173,6 +176,24 @@ export async function supprimerRealisee(id) {
   notifier();
 }
 
+// ------------------------------------------------------------ Plan IA
+
+// Remplace les séances IA futures « à faire » par celles du plan validé, en une seule transaction.
+export async function appliquerPlan(plan, modele) {
+  const r = remplacement(etat.prevues, plan, aujourdhui());
+  const meta = { ...r.meta, modele };
+  await db.appliquer([
+    ...r.aSupprimer.map(id => ({ magasin: 'prevues', supprimer: id })),
+    ...r.aAjouter.map(p => ({ magasin: 'prevues', mettre: p })),
+    { magasin: 'kv', mettre: { cle: 'plan', valeur: meta } },
+  ]);
+  const supprimes = new Set(r.aSupprimer);
+  etat.prevues = [...etat.prevues.filter(p => !supprimes.has(p.id)), ...r.aAjouter];
+  etat.plan = meta;
+  notifier();
+  return r;
+}
+
 // ------------------------------------------------------------ Sauvegarde
 
 export async function exporter() {
@@ -187,6 +208,7 @@ export async function importer(donnees) {
   etat.profil = donnees.profil;
   etat.semainier = donnees.semainier;
   etat.reglages = donnees.reglages;
+  etat.plan = donnees.plan;
   etat.objectifs = donnees.objectifs;
   etat.prevues = donnees.prevues;
   etat.realisees = donnees.realisees;

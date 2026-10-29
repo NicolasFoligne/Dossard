@@ -1,5 +1,5 @@
 // Accès IndexedDB. Tout est stocké sur le téléphone.
-// Magasins exportés : kv (profil, semainier, réglages), objectifs, prevues, realisees.
+// Magasins exportés : kv (profil, semainier, réglages, plan IA), objectifs, prevues, realisees.
 // Magasin « appareil » : propre au téléphone, jamais exporté (clé API, date du dernier export…).
 
 const NOM_BASE = 'dossard';
@@ -49,6 +49,7 @@ export async function lireTout() {
     profil: valeurs.profil,
     semainier: valeurs.semainier,
     reglages: valeurs.reglages,
+    plan: valeurs.plan,
     objectifs,
     prevues,
     realisees,
@@ -85,6 +86,7 @@ export async function remplacerTout(d) {
   kv.put({ cle: 'profil', valeur: d.profil });
   kv.put({ cle: 'semainier', valeur: d.semainier });
   kv.put({ cle: 'reglages', valeur: d.reglages });
+  if (d.plan) kv.put({ cle: 'plan', valeur: d.plan });
   for (const n of MAGASINS_LISTES) for (const x of d[n]) tx.objectStore(n).put(x);
   return fin(tx);
 }

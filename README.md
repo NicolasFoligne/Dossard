@@ -12,6 +12,7 @@ Le cahier des charges et les conventions du projet sont dans [CLAUDE.md](CLAUDE.
 
 ```sh
 node tests/regles.test.js     # règles métier
+node tests/ia.test.js         # génération du plan par l'IA (API simulée)
 node tests/statique.test.js   # manifest, service worker, chemins relatifs
 node tests/e2e.cjs            # parcours complet dans Chromium (nécessite Playwright)
 ```

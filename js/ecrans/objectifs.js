@@ -3,6 +3,7 @@ import * as D from '../domaine.js';
 import * as F from '../format.js';
 import * as U from '../ui.js';
 import { ouvrirObjectif, ouvrirResultat } from './formulaires.js';
+import { ouvrirPlanIa } from './planIa.js';
 
 const { h } = U;
 
@@ -25,8 +26,11 @@ function carteObjectif(o, auj) {
     actions.push(h('button.bouton', {
       type: 'button',
       onclick: async () => {
-        if (!(await U.confirmer(`Démarrer l'objectif « ${o.nom} » ? Il passera « En cours » à partir d'aujourd'hui et les séances réalisées y seront rattachées.`, { ok: 'Démarrer' }))) return;
-        if (await U.tenter(async () => { await M.demarrerObjectif(o.id); return true; })) U.toast('Objectif démarré 💪');
+        if (!(await U.confirmer(`Démarrer l'objectif « ${o.nom} » ? Il passera « En cours » à partir d'aujourd'hui, les séances réalisées y seront rattachées et le plan d'entraînement sera recalculé pour tous vos objectifs en cours.`, { ok: 'Démarrer' }))) return;
+        if (await U.tenter(async () => { await M.demarrerObjectif(o.id); return true; })) {
+          U.toast('Objectif démarré 💪');
+          if (o.dateEpreuve > F.aujourdhui()) ouvrirPlanIa({ auto: true });
+        }
       },
     }, 'Démarrer l\'objectif'));
   }

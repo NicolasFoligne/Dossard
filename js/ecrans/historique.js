@@ -3,7 +3,6 @@ import * as D from '../domaine.js';
 import * as F from '../format.js';
 import * as U from '../ui.js';
 import { ouvrirSaisieRealisee } from './formulaires.js';
-import { capitaliser } from './accueil.js';
 
 const { h } = U;
 
@@ -29,7 +28,7 @@ export function ecranHistorique() {
             return h('button.ligne-seance', { type: 'button', onclick: () => ouvrirSaisieRealisee({ id: r.id }) },
               h('span.ligne-icone', D.discipline(r.discipline).icone),
               h('span.ligne-texte',
-                h('strong', capitaliser(F.dateCourte(r.date))),
+                h('strong', F.capitaliser(F.dateCourte(r.date))),
                 h('span', [F.duree(r.dureeS), r.distanceKm && F.distance(r.distanceKm, r.discipline), a?.texte].filter(Boolean).join(' · ')),
                 r.notes && h('span.ligne-notes', r.notes)),
               r.ressenti && h('span.etiquette', { title: 'Ressenti' }, `${r.ressenti}/5`));

@@ -67,7 +67,7 @@ export const TYPES_OBJECTIF = {
     { id: 'XS', libelle: 'XS', natationM: 400, veloKm: 10, courseKm: 2.5, minSemaines: 6 },
     { id: 'S', libelle: 'S', natationM: 750, veloKm: 20, courseKm: 5, minSemaines: 8 },
     { id: 'M', libelle: 'M', natationM: 1500, veloKm: 40, courseKm: 10, minSemaines: 12 },
-    { id: 'L', libelle: 'L', natationM: 3000, veloKm: 80, courseKm: 30, minSemaines: 16 },
+    { id: 'L', libelle: 'L', natationM: 1900, veloKm: 90, courseKm: 21.1, minSemaines: 16 },
     { id: 'XL', libelle: 'XL', natationM: 4000, veloKm: 120, courseKm: 30, minSemaines: 20 },
     { id: 'XXL', libelle: 'XXL', natationM: 3800, veloKm: 180, courseKm: 42.195, minSemaines: 24 },
   ],
