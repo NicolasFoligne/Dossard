@@ -3,6 +3,7 @@ import * as D from '../domaine.js';
 import * as F from '../format.js';
 import { h } from '../ui.js';
 import { ouvrirSaisieRealisee, ouvrirDetailPrevue, libellePrevue } from './formulaires.js';
+import { phaseDuJour } from '../ia.js';
 
 export function alertesCourantes() {
   return D.alertes({
@@ -22,10 +23,11 @@ export function ecranAccueil() {
   const alertes = alertesCourantes();
   const sem = D.semaine(F.lundiDe(auj), M.etat.prevues, M.etat.realisees);
   const prochaine = D.prochaineSeance(M.etat.prevues, auj);
+  const phase = phaseDuJour(M.etat.plan, auj);
   const enCours = M.etat.objectifs.filter(o => o.statut === 'en_cours').sort((a, b) => a.dateEpreuve.localeCompare(b.dateEpreuve));
 
   return h('div.ecran',
-    h('header.entete-ecran', h('h1', 'Dossard'), h('p.sous-titre', capitaliser(F.dateLongue(auj)))),
+    h('header.entete-ecran', h('h1', 'Dossard'), h('p.sous-titre', F.capitaliser(F.dateLongue(auj)))),
 
     alertes.length > 0 && h('section.alertes', { 'aria-label': 'Alertes' },
       alertes.map(a => h('a.alerte', { href: cibleAlerte[a.code] ?? '#/', class: `alerte-${a.niveau}` },
@@ -33,7 +35,7 @@ export function ecranAccueil() {
         h('span', a.message)))),
 
     h('section.carte',
-      h('h2', 'Cette semaine'),
+      h('div.semaine-tete', h('h2', 'Cette semaine'), phase && h('span.etiquette', `Phase ${phase.nom}`)),
       h('div.semaine', sem.jours.map(j => h('div.jour', { class: j.date === auj ? 'jour-auj' : '' },
         h('span.jour-nom', F.jourCourt(j.date)),
         h('span.jour-num', String(F.depuisIso(j.date).getDate())),
@@ -56,10 +58,10 @@ export function ecranAccueil() {
         ? h('button.ligne-seance', { type: 'button', onclick: () => ouvrirDetailPrevue(prochaine.id) },
           h('span.ligne-icone', D.discipline(prochaine.discipline).icone),
           h('span.ligne-texte',
-            h('strong', prochaine.date === auj ? 'Aujourd\'hui' : capitaliser(F.dateCourte(prochaine.date))),
+            h('strong', prochaine.date === auj ? 'Aujourd\'hui' : F.capitaliser(F.dateCourte(prochaine.date))),
             h('span', libellePrevue(prochaine))),
           h('span.chevron', '›'))
-        : h('p.vide', 'Aucune séance prévue. Le plan sera généré par l\'IA (lot 2) ; en attendant, ajoutez une séance depuis l\'onglet Plan.')),
+        : h('p.vide', 'Aucune séance prévue. ', h('a', { href: '#/plan' }, 'Générer ou compléter le plan'))),
 
     h('section.carte',
       h('h2', 'Objectifs en cours'),
@@ -87,4 +89,3 @@ function carteAvancement(o, auj) {
     volumes.length > 0 && h('p.avancement-volumes', volumes.join('   ')));
 }
 
-export const capitaliser = s => s.charAt(0).toUpperCase() + s.slice(1);

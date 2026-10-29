@@ -587,3 +587,24 @@ input[type="date"] { appearance: none; -webkit-appearance: none; }
 /* Zones de formulaire redessinées dynamiquement (distance, type…). */
 .zone { display: flex; flex-direction: column; gap: 14px; }
 .zone:empty { display: none; }
+
+/* ---------------------------------------------------------------- Plan IA */
+
+.etiquette-ia { background: var(--info-doux); color: var(--info); }
+details > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; font-weight: 650; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "›"; display: inline-block; transition: transform 0.15s; color: var(--texte-2); font-size: 1.3rem; }
+details[open] > summary::before { transform: rotate(90deg); }
+.texte-analyse { white-space: pre-wrap; }
+.liste-phases, .liste-points { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.liste-points { padding-left: 16px; }
+.semaine-apercu { border-top: 1px solid var(--bordure); }
+.semaine-apercu > summary { justify-content: space-between; }
+.semaine-apercu > summary > span:first-child { margin-right: auto; }
+.ligne-apercu { display: flex; flex-direction: column; padding: 6px 0 8px 22px; border-top: 1px dashed var(--bordure); }
+.ligne-apercu span { font-size: 0.92rem; }
+.progres { font-weight: 650; color: var(--info); }
+.progres:empty { display: none; }
+.secours { gap: 12px; }
+.etapes { margin: 0; padding-left: 20px; color: var(--texte-2); font-size: 0.93rem; }
+.bouton:disabled { opacity: 0.55; cursor: default; }

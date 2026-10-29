@@ -121,7 +121,7 @@ function ecranIa() {
     const cle = M.etat.appareil.cleApi ?? '';
     const champCle = h('input', { type: 'password', name: 'cle', value: cle, autocomplete: 'off', spellcheck: false, placeholder: 'sk-ant-…', autocapitalize: 'off' });
     const form = h('form.formulaire.carte', { novalidate: true },
-      h('p.aide', 'La génération du plan par l\'IA arrive au lot 2. La clé est stockée uniquement sur ce téléphone et n\'est jamais incluse dans l\'export.'),
+      h('p.aide', 'La clé sert à générer le plan d\'entraînement. Elle est stockée uniquement sur ce téléphone, envoyée seulement à l\'API Anthropic, et n\'est jamais incluse dans l\'export.'),
       U.champ('Clé API Anthropic', champCle, cle ? 'Une clé est enregistrée sur ce téléphone.' : 'Aucune clé enregistrée.'),
       h('label.interrupteur', h('input', { type: 'checkbox', onchange: e => { champCle.type = e.target.checked ? 'text' : 'password'; } }), h('span', 'Afficher la clé')),
       U.champ('Modèle', U.texte('modele', M.etat.reglages.modeleIa, { autocapitalize: 'off', spellcheck: false }), `Par défaut : ${D.reglagesParDefaut().modeleIa}`),

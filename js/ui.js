@@ -50,8 +50,10 @@ export function toast(message, { erreur = false } = {}) {
 const pile = [];
 
 // Ouvre une feuille plein écran. `contenu` reçoit la fonction de fermeture.
-export function ouvrirFeuille(titre, construire, { actions = null } = {}) {
+// `surFermeture` est appelée quelle que soit la façon dont la feuille se ferme.
+export function ouvrirFeuille(titre, construire, { actions = null, surFermeture = null } = {}) {
   const fermer = () => {
+    surFermeture?.();
     feuille.classList.add('sortie');
     setTimeout(() => feuille.remove(), 180);
     const i = pile.indexOf(feuille);
@@ -67,13 +69,14 @@ export function ouvrirFeuille(titre, construire, { actions = null } = {}) {
     corps);
   ajouter(corps, [construire(fermer)]);
   document.getElementById('feuilles').append(feuille);
+  feuille.surFermeture = surFermeture;
   pile.push(feuille);
   document.body.classList.add('feuille-ouverte');
   return fermer;
 }
 
 export function fermerToutesFeuilles() {
-  for (const f of [...pile]) f.remove();
+  for (const f of [...pile]) { f.surFermeture?.(); f.remove(); }
   pile.length = 0;
   document.body.classList.remove('feuille-ouverte');
 }
