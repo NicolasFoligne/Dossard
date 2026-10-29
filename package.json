@@ -1,0 +1,9 @@
+{
+  "name": "dossard",
+  "private": true,
+  "type": "module",
+  "description": "PWA personnelle de préparation sportive. Aucune dépendance : ce fichier sert seulement aux scripts de test (node).",
+  "scripts": {
+    "test": "node tests/regles.test.js && node tests/statique.test.js && node tests/e2e.cjs"
+  }
+}

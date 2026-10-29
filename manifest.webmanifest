@@ -1,0 +1,21 @@
+{
+  "name": "Dossard — préparation sportive",
+  "short_name": "Dossard",
+  "description": "Préparation sportive multi-objectifs : course à pied et triathlon.",
+  "lang": "fr",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f2ef",
+  "theme_color": "#e8590c",
+  "categories": ["sports", "health", "fitness"],
+  "icons": [
+    { "src": "icons/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
