@@ -5,6 +5,7 @@ import * as D from './domaine.js';
 import { aujourdhui } from './format.js';
 import { construireExport } from './sauvegarde.js';
 import { remplacement } from './ia.js';
+import * as S from './soin.js';
 
 export const etat = {
   profil: D.profilParDefaut(),
@@ -14,6 +15,8 @@ export const etat = {
   objectifs: [],
   prevues: [],
   realisees: [],
+  blessures: [], // suivis de blessure (programme de soin)
+  bilans: [], // bilans quotidiens des suivis
   appareil: {},
 };
 
@@ -30,6 +33,8 @@ export async function charger() {
   etat.objectifs = d.objectifs;
   etat.prevues = d.prevues;
   etat.realisees = d.realisees;
+  etat.blessures = d.blessures ?? [];
+  etat.bilans = d.bilans ?? [];
   etat.appareil = d.appareil;
   if (!etat.appareil.premiereUtilisation) await ecrireAppareil('premiereUtilisation', aujourdhui());
 }
@@ -48,7 +53,10 @@ export const objectif = id => etat.objectifs.find(o => o.id === id);
 export const prevue = id => etat.prevues.find(p => p.id === id);
 export const realisee = id => etat.realisees.find(r => r.id === id);
 
-export const aDesDonnees = () => etat.objectifs.length + etat.prevues.length + etat.realisees.length > 0;
+export const suivi = id => etat.blessures.find(s => s.id === id);
+export const bilan = id => etat.bilans.find(b => b.id === id);
+
+export const aDesDonnees = () => etat.objectifs.length + etat.prevues.length + etat.realisees.length + etat.blessures.length > 0;
 
 // ------------------------------------------------------------ Profil, semainier, réglages
 
@@ -194,6 +202,49 @@ export async function appliquerPlan(plan, modele) {
   return r;
 }
 
+// ------------------------------------------------------------ Suivis de blessure
+
+async function sauverSuivi(s) {
+  await db.mettre('blessures', s);
+  remplacerDans(etat.blessures, s);
+  notifier();
+  return s;
+}
+
+export const creerSuivi = donnees => sauverSuivi(S.creerSuivi(donnees));
+export const modifierSuivi = (id, donnees) => sauverSuivi(S.modifierSuivi(suivi(id), donnees));
+export const changerPhaseSuivi = (id, numero) => sauverSuivi(S.changerPhase(suivi(id), numero, aujourdhui()));
+export const terminerSuivi = id => sauverSuivi(S.terminerSuivi(suivi(id), aujourdhui()));
+
+// Supprime le suivi et tous ses bilans.
+export async function supprimerSuivi(id) {
+  const lies = etat.bilans.filter(b => b.blessureId === id);
+  await db.appliquer([{ magasin: 'blessures', supprimer: id }, ...lies.map(b => ({ magasin: 'bilans', supprimer: b.id }))]);
+  etat.blessures = etat.blessures.filter(s => s.id !== id);
+  etat.bilans = etat.bilans.filter(b => b.blessureId !== id);
+  notifier();
+}
+
+// Crée ou remplace le bilan du jour indiqué (un seul bilan par jour et par suivi).
+export async function enregistrerBilan(donnees) {
+  const b = S.enregistrerBilan(donnees, suivi(donnees.blessureId), etat.bilans);
+  const ops = [{ magasin: 'bilans', mettre: b }];
+  // Bilan déplacé sur une date qui en avait déjà un : l'ancien est remplacé.
+  const doublons = etat.bilans.filter(x => x.id !== b.id && x.blessureId === b.blessureId && x.date === b.date);
+  doublons.forEach(x => ops.push({ magasin: 'bilans', supprimer: x.id }));
+  await db.appliquer(ops);
+  etat.bilans = etat.bilans.filter(x => !doublons.includes(x));
+  remplacerDans(etat.bilans, b);
+  notifier();
+  return b;
+}
+
+export async function supprimerBilan(id) {
+  await db.supprimer('bilans', id);
+  etat.bilans = etat.bilans.filter(b => b.id !== id);
+  notifier();
+}
+
 // ------------------------------------------------------------ Sauvegarde
 
 export async function exporter() {
@@ -212,5 +263,7 @@ export async function importer(donnees) {
   etat.objectifs = donnees.objectifs;
   etat.prevues = donnees.prevues;
   etat.realisees = donnees.realisees;
+  etat.blessures = donnees.blessures ?? [];
+  etat.bilans = donnees.bilans ?? [];
   notifier();
 }
