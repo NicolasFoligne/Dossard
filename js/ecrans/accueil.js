@@ -4,6 +4,8 @@ import * as F from '../format.js';
 import { h } from '../ui.js';
 import { ouvrirSaisieRealisee, ouvrirDetailPrevue, libellePrevue } from './formulaires.js';
 import { phaseDuJour } from '../ia.js';
+import { carteSoinAccueil } from './soin.js';
+import * as S from '../soin.js';
 
 export function alertesCourantes() {
   return D.alertes({
@@ -25,6 +27,8 @@ export function ecranAccueil() {
   const prochaine = D.prochaineSeance(M.etat.prevues, auj);
   const phase = phaseDuJour(M.etat.plan, auj);
   const enCours = M.etat.objectifs.filter(o => o.statut === 'en_cours').sort((a, b) => a.dateEpreuve.localeCompare(b.dateEpreuve));
+  // Jours de la semaine où des exercices de soin ont été faits (suivi de blessure).
+  const joursSoin = new Set(M.etat.bilans.filter(b => b.exercices?.length).map(b => b.date));
 
   return h('div.ecran',
     h('header.entete-ecran', h('h1', 'Dossard'), h('p.sous-titre', F.capitaliser(F.dateLongue(auj)))),
@@ -33,6 +37,8 @@ export function ecranAccueil() {
       alertes.map(a => h('a.alerte', { href: cibleAlerte[a.code] ?? '#/', class: `alerte-${a.niveau}` },
         h('span.alerte-icone', a.niveau === 'danger' ? '⛔' : a.niveau === 'info' ? '💾' : '⚠️'),
         h('span', a.message)))),
+
+    S.suivisActifs(M.etat.blessures).length > 0 && carteSoinAccueil(),
 
     h('section.carte',
       h('div.semaine-tete', h('h2', 'Cette semaine'), phase && h('span.etiquette', `Phase ${phase.nom}`)),
@@ -47,7 +53,8 @@ export function ecranAccueil() {
           j.realisees.filter(r => !r.prevueId || !j.prevues.some(p => p.id === r.prevueId)).map(r => h('button.pastille.pastille-faite', {
             type: 'button', 'aria-label': `Réalisée : ${D.discipline(r.discipline).libelle}`,
             onclick: () => ouvrirSaisieRealisee({ id: r.id }),
-          }, D.discipline(r.discipline).icone)))))),
+          }, D.discipline(r.discipline).icone)),
+          joursSoin.has(j.date) && h('a.pastille.pastille-soin', { href: '#/soin', 'aria-label': 'Exercices de soin faits', title: 'Exercices de soin faits' }, '✚'))))),
       h('div.bilan-semaine',
         h('div', h('span.bilan-libelle', 'Prévu'), h('strong', `${sem.prevu.nb} séance${sem.prevu.nb > 1 ? 's' : ''}`), sem.prevu.dureeS > 0 && h('span', F.duree(sem.prevu.dureeS))),
         h('div', h('span.bilan-libelle', 'Réalisé'), h('strong', `${sem.realise.nb} séance${sem.realise.nb > 1 ? 's' : ''}`), sem.realise.dureeS > 0 && h('span', F.duree(sem.realise.dureeS))))),
@@ -68,6 +75,8 @@ export function ecranAccueil() {
       enCours.length
         ? enCours.map(o => carteAvancement(o, auj))
         : h('p.vide', 'Aucun objectif en cours. ', h('a', { href: '#/objectifs' }, 'Voir mes objectifs'))),
+
+    !S.suivisActifs(M.etat.blessures).length && carteSoinAccueil(),
 
     h('button.fab', { type: 'button', onclick: () => ouvrirSaisieRealisee(), 'aria-label': 'Saisir une séance réalisée' },
       h('span', { 'aria-hidden': 'true' }, '＋'), h('span', 'Séance')));
