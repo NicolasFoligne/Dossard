@@ -256,6 +256,46 @@ async function main() {
     await page.locator('.objectif[data-statut=termine]', { hasText: 'Semi de Lyon' }).waitFor();
     assert.match(await page.locator('.objectif[data-statut=termine] .resultat').textContent(), /1:44:12 · classement 230e/);
 
+    etape('Suivi de blessure : démarrage, bilan du jour, carte verte, contrainte du plan IA');
+    await page.goto(`${URL_APP}#/accueil`);
+    await page.locator('a.lien-soin').click();
+    await page.getByRole('button', { name: '＋ Démarrer un suivi' }).click();
+    await page.locator('.feuille').getByRole('button', { name: 'Démarrer le suivi' }).click();
+    await page.getByText('Choisissez le côté atteint.').waitFor();
+    await page.locator('.feuille .puce', { hasText: 'Gauche' }).click();
+    await page.locator('.feuille').getByRole('button', { name: 'Démarrer le suivi' }).click();
+    await page.locator('.boite', { hasText: 'Recalculer le plan' }).getByRole('button', { name: 'Plus tard' }).click();
+    await page.getByRole('heading', { name: 'Tendon d\'Achille gauche' }).waitFor();
+    await page.getByText('Phase 1/3 · Calmer · semaine 1').waitFor();
+    await capture('13-soin');
+    await page.getByRole('button', { name: 'Faire le bilan du jour' }).first().click();
+    await page.locator('.feuille').getByRole('button', { name: 'Enregistrer' }).click();
+    await page.getByText('Raideur au réveil : note obligatoire.').waitFor();
+    await page.locator('.feuille [name=raideurMatin][value="5"]').check({ force: true });
+    await page.locator('.feuille [name=douleurMarche][value="4"]').check({ force: true });
+    await page.locator('.feuille [name=douleurEscaliers][value="6"]').check({ force: true });
+    await page.locator('.feuille .puce', { hasText: 'Isométrie debout' }).click();
+    await capture('14-bilan');
+    await page.locator('.feuille').getByRole('button', { name: 'Enregistrer' }).click();
+    await page.locator('.toast', { hasText: 'Bilan enregistré' }).waitFor();
+    assert.match(await page.locator('.ecran .ligne-bilan').textContent(), /Réveil 5\/10 · marche 4\/10 · escaliers 6\/10/);
+    await page.locator('.graphique .barre-soin').waitFor();
+    await page.goto(`${URL_APP}#/accueil`);
+    await page.locator('.carte-soin', { hasText: 'Bilan du jour fait' }).waitFor();
+    await page.locator('.pastille-soin').waitFor();
+    await capture('15-accueil-soin');
+    await page.getByRole('link', { name: 'Plan', exact: true }).click();
+    await page.locator('.soin-plan', { hasText: 'Tendon d\'Achille gauche en phase 1' }).waitFor();
+    await page.getByText('Le plan a été calculé pour une autre phase').waitFor(); // plan généré avant le suivi
+    const contexteSoin = await page.evaluate(async () => {
+      const M = await import('./js/magasin.js');
+      const IA = await import('./js/ia.js');
+      const F = await import('./js/format.js');
+      return IA.construireContexte(M.etat, F.aujourdhui()).blessures;
+    });
+    assert.equal(contexteSoin.length, 1);
+    assert.equal(contexteSoin[0].projection[0].courseAutorisee, false);
+
     etape('Export JSON (sans clé API) puis import avec confirmation');
     await page.goto(`${URL_APP}#/reglages/sauvegarde`);
     const [telechargement] = await Promise.all([
@@ -268,6 +308,8 @@ async function main() {
     const exportJson = JSON.parse(exportTexte);
     assert.equal(exportJson.donnees.objectifs.length, 2);
     assert.equal(exportJson.donnees.realisees.length, 2);
+    assert.equal(exportJson.donnees.blessures.length, 1);
+    assert.equal(exportJson.donnees.bilans.length, 1);
     assert.match(telechargement.suggestedFilename(), /^dossard-sauvegarde-\d{4}-\d{2}-\d{2}\.json$/);
     await page.getByText(/Dernier export : /).waitFor();
 

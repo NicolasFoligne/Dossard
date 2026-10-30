@@ -1,10 +1,12 @@
 // Accès IndexedDB. Tout est stocké sur le téléphone.
-// Magasins exportés : kv (profil, semainier, réglages, plan IA), objectifs, prevues, realisees.
+// Magasins exportés : kv (profil, semainier, réglages, plan IA), objectifs, prevues, realisees,
+// blessures (suivis de blessure) et bilans (bilans quotidiens des suivis).
 // Magasin « appareil » : propre au téléphone, jamais exporté (clé API, date du dernier export…).
 
 const NOM_BASE = 'dossard';
-const VERSION_BASE = 1;
-export const MAGASINS_LISTES = ['objectifs', 'prevues', 'realisees'];
+const VERSION_BASE = 2; // 2 : ajout des magasins « blessures » et « bilans »
+export const MAGASINS_LISTES = ['objectifs', 'prevues', 'realisees', 'blessures', 'bilans'];
+const INDEX_DATE = { objectifs: 'dateEpreuve', prevues: 'date', realisees: 'date', blessures: 'debut', bilans: 'date' };
 const MAGASINS_EXPORTES = ['kv', ...MAGASINS_LISTES];
 
 let base = null;
@@ -32,7 +34,7 @@ export async function ouvrir() {
     if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv', { keyPath: 'cle' });
     if (!db.objectStoreNames.contains('appareil')) db.createObjectStore('appareil', { keyPath: 'cle' });
     for (const nom of MAGASINS_LISTES) {
-      if (!db.objectStoreNames.contains(nom)) db.createObjectStore(nom, { keyPath: 'id' }).createIndex('date', nom === 'objectifs' ? 'dateEpreuve' : 'date');
+      if (!db.objectStoreNames.contains(nom)) db.createObjectStore(nom, { keyPath: 'id' }).createIndex('date', INDEX_DATE[nom]);
     }
   };
   base = await promesse(req);
@@ -42,7 +44,7 @@ export async function ouvrir() {
 export async function lireTout() {
   const db = await ouvrir();
   const tx = db.transaction([...MAGASINS_EXPORTES, 'appareil'], 'readonly');
-  const [kv, objectifs, prevues, realisees, appareil] = await Promise.all(
+  const [kv, objectifs, prevues, realisees, blessures, bilans, appareil] = await Promise.all(
     [...MAGASINS_EXPORTES, 'appareil'].map(n => promesse(tx.objectStore(n).getAll())));
   const valeurs = Object.fromEntries(kv.map(e => [e.cle, e.valeur]));
   return {
@@ -53,6 +55,8 @@ export async function lireTout() {
     objectifs,
     prevues,
     realisees,
+    blessures,
+    bilans,
     appareil: Object.fromEntries(appareil.map(e => [e.cle, e.valeur])),
   };
 }
@@ -87,6 +91,6 @@ export async function remplacerTout(d) {
   kv.put({ cle: 'semainier', valeur: d.semainier });
   kv.put({ cle: 'reglages', valeur: d.reglages });
   if (d.plan) kv.put({ cle: 'plan', valeur: d.plan });
-  for (const n of MAGASINS_LISTES) for (const x of d[n]) tx.objectStore(n).put(x);
+  for (const n of MAGASINS_LISTES) for (const x of d[n] ?? []) tx.objectStore(n).put(x);
   return fin(tx);
 }

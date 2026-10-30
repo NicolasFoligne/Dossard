@@ -2,7 +2,8 @@
 // et n'est jamais incluse dans l'export.
 import { profilParDefaut, semainierParDefaut, reglagesParDefaut, ErreurMetier } from './domaine.js';
 
-export const FORMAT_SAUVEGARDE = 1;
+// 2 : ajout des suivis de blessure (blessures, bilans). Les sauvegardes au format 1 restent lisibles.
+export const FORMAT_SAUVEGARDE = 2;
 
 export function construireExport(donnees, maintenant = Date.now()) {
   const reglages = { ...donnees.reglages };
@@ -19,6 +20,8 @@ export function construireExport(donnees, maintenant = Date.now()) {
       objectifs: donnees.objectifs,
       prevues: donnees.prevues,
       realisees: donnees.realisees,
+      blessures: donnees.blessures ?? [],
+      bilans: donnees.bilans ?? [],
     },
   };
 }
@@ -47,6 +50,13 @@ export function lireImport(texte) {
   }
   exiger(d.objectifs.every(o => typeof o.dateEpreuve === 'string' && o.statut), 'objectif incomplet.');
   exiger([...d.prevues, ...d.realisees].every(s => typeof s.date === 'string' && typeof s.discipline === 'string'), 'séance incomplète.');
+  for (const cle of ['blessures', 'bilans']) {
+    exiger(d[cle] === undefined || (Array.isArray(d[cle]) && d[cle].every(x => estObjet(x) && typeof x.id === 'string' && x.id)), `liste « ${cle} » invalide.`);
+  }
+  const blessures = d.blessures ?? [];
+  const bilans = d.bilans ?? [];
+  exiger(blessures.every(b => typeof b.programme === 'string' && typeof b.debut === 'string' && Number.isInteger(b.phase)), 'suivi de blessure incomplet.');
+  exiger(bilans.every(b => typeof b.date === 'string' && typeof b.blessureId === 'string'), 'bilan de soin incomplet.');
   const semainier = estObjet(d.semainier) && Array.isArray(d.semainier.jours) && d.semainier.jours.length === 7
     ? d.semainier : semainierParDefaut();
   const reglages = { ...reglagesParDefaut(), ...(estObjet(d.reglages) ? d.reglages : {}) };
@@ -59,10 +69,13 @@ export function lireImport(texte) {
     objectifs: d.objectifs,
     prevues: d.prevues,
     realisees: d.realisees,
+    blessures,
+    bilans,
     exporteLe: json.exporteLe ?? null,
   };
 }
 
 export function resumeImport(d) {
-  return `${d.objectifs.length} objectif(s), ${d.prevues.length} séance(s) prévue(s), ${d.realisees.length} séance(s) réalisée(s)`;
+  const soin = d.blessures?.length ? `, ${d.blessures.length} suivi(s) de blessure et ${d.bilans.length} bilan(s)` : '';
+  return `${d.objectifs.length} objectif(s), ${d.prevues.length} séance(s) prévue(s), ${d.realisees.length} séance(s) réalisée(s)${soin}`;
 }

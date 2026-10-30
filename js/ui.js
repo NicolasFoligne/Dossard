@@ -1,5 +1,6 @@
 // Petits utilitaires d'interface : création d'éléments, feuilles modales, champs de formulaire.
 import { secondesVersHms, hmsVersSecondes, lireNombre } from './format.js';
+import { ErreurMetier } from './domaine.js';
 
 // h('div.carte', { onclick }, enfant1, 'texte', …)
 export function h(sel, attrs, ...enfants) {
@@ -168,6 +169,24 @@ export function lireRessenti(form, nom) {
   return v ? Number(v) : null;
 }
 
+// Note de douleur de 0 à 10 (boutons radio). `vide` : libellé d'un choix « sans note » (champ facultatif).
+export function echelle(nom, valeurInitiale, { vide = null, libelle = '' } = {}) {
+  const niveau = n => (n <= 2 ? 'bas' : n <= 4 ? 'moyen' : 'haut');
+  return h('div.echelle', { role: 'radiogroup', 'aria-label': libelle },
+    vide && h('label.echelle-vide',
+      h('input', { type: 'radio', name: nom, value: '', checked: valeurInitiale === null || valeurInitiale === undefined }),
+      h('span', vide)),
+    h('div.echelle-notes', Array.from({ length: 11 }, (_, n) => h('label.echelle-choix', { 'data-niveau': niveau(n) },
+      h('input', { type: 'radio', name: nom, value: n, checked: valeurInitiale === n, 'aria-label': `${n} sur 10` }),
+      h('span', String(n))))),
+    h('div.echelle-reperes', { 'aria-hidden': 'true' }, h('span', 'Aucune'), h('span', 'Maximale')));
+}
+
+export function lireEchelle(form, nom) {
+  const v = form.querySelector(`[name="${nom}"]:checked`)?.value;
+  return v === undefined || v === '' ? null : Number(v);
+}
+
 export const valeur = (form, nom) => form.elements[nom]?.value ?? '';
 export const valeurNombre = (form, nom) => lireNombre(valeur(form, nom));
 export const coche = (form, nom) => !!form.elements[nom]?.checked;
@@ -178,7 +197,8 @@ export async function tenter(action, zoneErreur = null) {
     if (zoneErreur) zoneErreur.textContent = '';
     return await action();
   } catch (e) {
-    console.error(e);
+    // Les erreurs de saisie (règles métier) sont affichées à l'utilisateur, pas journalisées.
+    if (!(e instanceof ErreurMetier)) console.error(e);
     const message = e?.message || 'Une erreur est survenue.';
     if (zoneErreur) {
       zoneErreur.textContent = message;

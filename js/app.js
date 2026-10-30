@@ -6,6 +6,7 @@ import { ecranPlan } from './ecrans/plan.js';
 import { ecranObjectifs } from './ecrans/objectifs.js';
 import { ecranHistorique } from './ecrans/historique.js';
 import { ecranReglages } from './ecrans/reglages.js';
+import { ecranSoin } from './ecrans/soin.js';
 import { enregistrerServiceWorker } from './miseajour.js';
 
 const ROUTES = {
@@ -14,6 +15,7 @@ const ROUTES = {
   objectifs: ecranObjectifs,
   historique: ecranHistorique,
   reglages: ecranReglages,
+  soin: ecranSoin, // hors barre d'onglets : accessible depuis la carte verte de l'accueil
 };
 
 function routeCourante() {

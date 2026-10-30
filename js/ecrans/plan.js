@@ -5,6 +5,7 @@ import { h } from '../ui.js';
 import { ouvrirPrevue, ouvrirDetailPrevue, libellePrevue } from './formulaires.js';
 import { ouvrirPlanIa } from './planIa.js';
 import { phaseDuJour } from '../ia.js';
+import * as S from '../soin.js';
 
 // Seules les premières semaines sont affichées d'emblée (un plan complet peut en compter plus de 20).
 const SEMAINES_VISIBLES = 4;
@@ -48,6 +49,9 @@ export function ecranPlan() {
       : h('p.aide', enCours.length
         ? 'Aucun plan généré pour l\'instant.'
         : 'Démarrez un objectif pour que l\'IA génère votre plan.'),
+    S.suivisActifs(M.etat.blessures).map(s => h('a.soin-plan', { href: `#/soin/${s.id}` },
+      `🩹 ${S.nomSuivi(s)} en phase ${s.phase} « ${S.phaseDe(s).nom} » : la course est limitée dans le plan.`,
+      meta && !S.planAJour(meta, M.etat.blessures) ? ' Le plan a été calculé pour une autre phase : recalculez-le.' : '')),
     enCours.length > 0 && h('button.bouton.large', { type: 'button', onclick: () => ouvrirPlanIa() }, meta ? 'Recalculer le plan' : 'Générer le plan'));
 
   return h('div.ecran',
