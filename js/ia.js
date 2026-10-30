@@ -1,6 +1,7 @@
 // Génération du plan par l'IA — partie pure (sans réseau ni DOM), testée par tests/ia.test.js :
 // contexte envoyé, prompt, schéma JSON de la réponse, validation stricte, remplacement des séances.
 import * as D from './domaine.js';
+import * as S from './soin.js';
 import { ajouterJours, ecartJours, lundiDe } from './format.js';
 
 const SEMAINES_HISTORIQUE = 8;
@@ -135,7 +136,14 @@ export function construireContexte(etat, aujourdhui) {
       date: p.date, discipline: p.discipline, type: p.type, dureeMin: enMinutes(p.dureeS), distanceKm: p.distanceKm,
     })),
     calendrier: semaines,
+    ...blessuresContexte(etat, aujourdhui),
   };
+}
+
+// Suivis de blessure en cours : phase, projection des phases et règles de course (contraintes validées).
+function blessuresContexte(etat, aujourdhui) {
+  const blessures = S.contexteIa(etat.blessures ?? [], etat.bilans ?? [], aujourdhui);
+  return blessures.length ? { blessures } : {};
 }
 
 function chronoTexte(s) {
@@ -155,6 +163,7 @@ Contraintes impératives (une réponse qui ne les respecte pas est rejetée auto
 3. Le nombre de séances d'une semaine ne dépasse jamais « plafondRestant » de cette semaine (null = pas de limite).
 4. Aucune séance avant « debut », à partir de « fin », ni le jour d'une épreuve.
 5. Les « seancesConservees » sont maintenues telles quelles : n'en crée pas de doublon et intègre-les dans la charge.
+6. Si « blessures » est présent, chaque séance de course ou d'enchaînement respecte la fenêtre de « projection » qui contient sa date : aucune course si « courseAutorisee » est false ; sinon uniquement les « intensites » et « types » listés, et pas plus de « dureeMaxMin » minutes de course. Aucune course ni enchaînement jusqu'à « courseInterditeJusquau » inclus.
 
 Principes de coaching à appliquer :
 - progression du volume hebdomadaire limitée à environ 10 % d'une semaine à l'autre, en partant du volume récent réel (« volumesHebdoMin ») ;
@@ -164,6 +173,7 @@ Principes de coaching à appliquer :
 - renforcement musculaire régulier ;
 - enchaînements vélo-course réguliers pour le triathlon, surtout en phase spécifique ;
 - prise en compte des antécédents de blessures du profil ;
+- en cas de suivi de blessure (« blessures ») : l'athlète fait ses exercices de soin à part, ne les planifie pas ; les séances de renforcement du plan ne chargent pas la zone blessée (pas de sauts, de pliométrie ni de montées sur pointe) ; maintiens l'endurance par le vélo et la natation quand la course est limitée ; après la projection, reprise de course très progressive ; explique dans l'analyse l'effet de la blessure sur la préparation ;
 - temps visés confrontés au niveau réel (performances, allures récentes) : dis franchement s'ils sont irréalistes et propose une cible crédible dans l'analyse.
 
 Rédaction : en français, concis. Pour chaque séance, échauffement, corps de séance et retour au calme tiennent en une ou deux phrases précises (allures, zones, répétitions, récupérations). « dureeMin » est un entier en minutes. « distanceKm » est en kilomètres (natation : 1.5 pour 1 500 m) ou null pour le renforcement. « objectifIds » liste les identifiants des objectifs servis par la séance. « analyse » fait au plus 10 phrases.
@@ -244,6 +254,9 @@ export function validerPlan(brut, contexte) {
     if (s.distanceKm !== null && s.distanceKm !== undefined && !(typeof s.distanceKm === 'number' && s.distanceKm >= 0)) {
       erreurs.push(`${ref} : « distanceKm » doit être un nombre positif ou null.`);
     }
+    for (const motif of S.erreursSeanceSoin({ date, discipline: s.discipline, type: s.type, intensite: s.intensite, dureeMin: s.dureeMin }, contexte.blessures)) {
+      erreurs.push(`${ref} : ${motif}`);
+    }
     dureeParJour.set(date, (dureeParJour.get(date) ?? 0) + (Number(s.dureeMin) || 0));
     nbParSemaine.set(jour.lundi, (nbParSemaine.get(jour.lundi) ?? 0) + 1);
 
@@ -284,6 +297,7 @@ export function validerPlan(brut, contexte) {
       seances,
       objectifIds: idsEnCours,
       objectifsNoms: Object.fromEntries([...objectifsParId].map(([id, o]) => [id, o.nom])),
+      soin: (contexte.blessures ?? []).map(b => ({ id: b.id, phase: b.phaseActuelle.numero })),
     },
   };
 }
@@ -336,7 +350,7 @@ export function remplacement(prevues, plan, aujourdhui, maintenant = Date.now())
   return {
     aSupprimer: prevues.filter(p => estRemplacable(p, aujourdhui)).map(p => p.id),
     aAjouter: plan.seances.map(s => D.creerPrevue({ ...s, source: 'ia', etat: 'a_faire' }, maintenant)),
-    meta: { genereLe: maintenant, analyse: plan.analyse, phases: plan.phases, objectifIds: plan.objectifIds },
+    meta: { genereLe: maintenant, analyse: plan.analyse, phases: plan.phases, objectifIds: plan.objectifIds, soin: plan.soin ?? [] },
   };
 }
 
