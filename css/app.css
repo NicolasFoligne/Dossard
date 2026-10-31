@@ -386,7 +386,7 @@ p { margin: 0; }
 .champ { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .champ-libelle { font-weight: 650; font-size: 0.93rem; padding: 0; }
 
-input[type="text"], input[type="password"], input[type="date"], input[type="time"], select, textarea {
+input[type="text"], input[type="password"], input[type="date"], input[type="time"], select, textarea, .zone-texte {
   font: inherit;
   font-size: 16px; /* évite le zoom automatique d'iOS */
   color: var(--texte);
@@ -397,10 +397,11 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   padding: 10px 12px;
   width: 100%;
 }
+.carte .zone-texte,
 .carte input[type="text"], .carte input[type="password"], .carte input[type="date"], .carte select, .carte textarea,
-.feuille input[type="text"], .feuille input[type="date"], .feuille input[type="time"], .feuille select, .feuille textarea { background: var(--fond); }
+.feuille input[type="text"], .feuille input[type="date"], .feuille input[type="time"], .feuille select, .feuille textarea, .feuille .zone-texte { background: var(--fond); }
 textarea { resize: vertical; min-height: 72px; }
-input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+input:focus, select:focus, textarea:focus, .zone-texte:focus { outline: none; border-color: var(--accent); }
 input[type="date"] { appearance: none; -webkit-appearance: none; }
 
 .grille-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -786,3 +787,7 @@ details.test-montees .formulaire { padding-bottom: 10px; }
 .creneau-reperes { position: relative; height: 16px; font-size: 0.7rem; color: var(--texte-2); }
 .creneau-reperes span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .creneaux-total { font-weight: 650; }
+
+/* Zone de texte libre éditable (remplace <textarea> : pas d'autoremplissage d'e-mail sur iPhone). */
+.zone-texte { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; cursor: text; -webkit-user-select: text; user-select: text; }
+.zone-texte:empty::before { content: attr(data-placeholder); color: var(--texte-2); pointer-events: none; }
