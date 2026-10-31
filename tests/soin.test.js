@@ -247,23 +247,41 @@ test('export/import : suivis, bilans et séances de soin inclus, anciennes sauve
 
 // ------------------------------------------------------------ Séances de soin du planning
 
-test('planning de soin : une séance par jour d\'exercices, d\'aujourd\'hui à la fin prévue de la phase', () => {
-  const s = nouveauSuivi({ debut: '2026-10-20' }); // phase 1 : 4 semaines max → jusqu'au 16/11
-  assert.equal(S.finPlanificationSoin(s, AUJ), '2026-11-16');
+test('planning de soin : une séance par jour d\'exercices, d\'aujourd\'hui à la fin du programme (3 phases)', () => {
+  // Phases enchaînées à leur durée maximale : phase 1 jusqu'au 16/11 (4 sem. depuis le 20/10),
+  // phase 2 du 17/11 au 08/02 (12 sem.), phase 3 du 09/02 au 22/03 (6 sem.).
+  const s = nouveauSuivi({ debut: '2026-10-20' });
+  assert.equal(S.finPlanificationSoin(s, AUJ), '2027-03-22');
   const { aMettre, aSupprimer } = S.reconcilierSoin([s], [], [], AUJ, 1);
   assert.deepEqual(aSupprimer, []);
-  assert.equal(aMettre.length, 18); // phase 1 : l'isométrie est quotidienne → une séance chaque jour du 30/10 au 16/11
-  assert.equal(aMettre[0].date, AUJ);
-  assert.equal(aMettre.at(-1).date, '2026-11-16');
-  assert.ok(aMettre.every(x => x.blessureId === s.id && x.etat === 'a_faire' && x.phase === 1));
+  assert.ok(aMettre.every(x => x.blessureId === s.id && x.etat === 'a_faire'));
+  const parPhase = n => aMettre.filter(x => x.phase === n);
+  // Phase 1 : l'isométrie est quotidienne → une séance chaque jour du 30/10 au 16/11.
+  assert.equal(parPhase(1).length, 18);
+  assert.equal(parPhase(1)[0].date, AUJ);
+  assert.equal(parPhase(1).at(-1).date, '2026-11-16');
+  // Phase 2 projetée : un jour sur deux depuis son début projeté, dosage de sa semaine 1.
+  assert.deepEqual(parPhase(2).slice(0, 2).map(x => [x.date, x.semaine]), [['2026-11-17', 1], ['2026-11-19', 1]]);
+  assert.deepEqual(parPhase(2)[0].exercices.map(e => `${e.id} ${e.dosage}`), ['montees_debout 3 × 15 lourdes', 'montees_assis 3 × 15 lourdes']);
+  assert.equal(parPhase(2).length, 42);
+  // Phase 3 projetée : sautillements + montées d'entretien, jusqu'à la fin du programme.
+  assert.equal(parPhase(3)[0].date, '2027-02-09');
+  assert.deepEqual(parPhase(3)[0].exercices.map(e => e.id), ['sautillements', 'montees_debout']);
+  assert.equal(aMettre.at(-1).date, '2027-03-21');
+  assert.ok(aMettre.at(-1).date <= S.finPlanificationSoin(s, AUJ));
   // Alternance fixe : montées lentes les jours pairs depuis le début de phase (30/10, 01/11…), pas le 31/10.
   assert.deepEqual(aMettre[0].exercices.map(e => e.id), ['iso_debout', 'iso_assis', 'montees_lentes']);
   assert.deepEqual(aMettre[1].exercices.map(e => e.id), ['iso_debout', 'iso_assis']);
   assert.equal(aMettre[0].exercices[2].dosage, 'Sur les 2 pieds · 3 × 15');
   // Semaine 3 (à partir du 03/11) : dosage de la semaine suivante.
   assert.equal(aMettre.find(x => x.date === '2026-11-03').exercices[0].dosage, 'Jambe gauche seule + sac 5 kg · 5 × 45 s');
-  // Phase dépassée : au moins 7 jours planifiés.
-  assert.equal(S.finPlanificationSoin(s, '2026-12-01'), '2026-12-07');
+  // Phase dépassée : la phase en cours dure encore au moins 7 jours, les suivantes s'enchaînent ensuite.
+  assert.deepEqual(S.projectionPhases(s, '2026-12-01').map(f => [f.du, f.au]),
+    [['2026-12-01', '2026-12-07'], ['2026-12-08', '2027-03-01'], ['2027-03-02', '2027-04-12']]);
+  assert.equal(S.finPlanificationSoin(s, '2026-12-01'), '2027-04-12');
+  // Dernière phase : le planning s'arrête à sa fin prévue.
+  const p3 = S.changerPhase(S.changerPhase(s, 2, AUJ), 3, AUJ);
+  assert.equal(S.finPlanificationSoin(p3, AUJ), '2026-12-10');
   // Rien pour un suivi terminé.
   assert.deepEqual(S.reconcilierSoin([S.terminerSuivi(s, AUJ)], [], [], AUJ).aMettre, []);
 });
@@ -273,7 +291,7 @@ test('planning de soin : phases 2 et 3, pas de séance les jours de repos (isom�
   const seances = S.reconcilierSoin([p2], [], [], AUJ).aMettre;
   assert.deepEqual(seances.slice(0, 3).map(x => x.date), [AUJ, '2026-11-01', '2026-11-03']); // un jour sur deux
   assert.deepEqual(seances[0].exercices.map(e => e.id), ['montees_debout', 'montees_assis']);
-  assert.equal(seances.at(-1).date <= '2027-01-21', true); // 12 semaines max à partir du 30/10
+  assert.equal(seances.filter(x => x.phase === 2).at(-1).date <= '2027-01-21', true); // 12 semaines max à partir du 30/10
   const p3 = S.changerPhase(p2, 3, '2026-11-02');
   const s3 = S.reconcilierSoin([p3], [], [], '2026-11-02').aMettre;
   assert.deepEqual(s3[0].exercices.map(e => e.id), ['sautillements', 'montees_debout']);
@@ -297,15 +315,19 @@ test('planning de soin : régénération au changement de phase, retour en arri�
   assert.ok(r.aSupprimer.every(id => !conservees.has(id)));
   assert.ok(r.aMettre.every(x => !conservees.has(x.id)));
   const apres = [...seances.filter(x => !r.aSupprimer.includes(x.id) && !r.aMettre.some(y => y.id === x.id)), ...r.aMettre];
-  const futuresAFaire = apres.filter(x => x.date >= AUJ && x.etat === 'a_faire');
-  assert.ok(futuresAFaire.every(x => x.phase === 2 && x.exercices[0].id === 'montees_debout'));
+  const futuresAFaire = apres.filter(x => x.date >= AUJ && x.etat === 'a_faire').sort((a, b) => a.date.localeCompare(b.date));
+  assert.ok(futuresAFaire.every(x => x.phase >= 2), 'plus aucune séance de phase 1 à faire');
+  assert.ok(futuresAFaire.filter(x => x.date <= '2027-01-21').every(x => x.phase === 2 && x.exercices[0].id === 'montees_debout'));
+  assert.ok(futuresAFaire.filter(x => x.date > '2027-01-21').every(x => x.phase === 3));
   assert.ok(apres.some(x => x.id === seances[1].id && x.etat === 'faite' && x.phase === 1));
 
   // Retour en phase 1 : les séances de phase 2 à faire sont régénérées en phase 1.
   const retour = S.changerPhase(p2, 1, AUJ);
   const r2 = S.reconcilierSoin([retour], apres, [], AUJ, 3);
   const apres2 = [...apres.filter(x => !r2.aSupprimer.includes(x.id) && !r2.aMettre.some(y => y.id === x.id)), ...r2.aMettre];
-  assert.ok(apres2.filter(x => x.date >= AUJ && x.etat === 'a_faire').every(x => x.phase === 1));
+  const futures2 = apres2.filter(x => x.date >= AUJ && x.etat === 'a_faire');
+  assert.ok(futures2.filter(x => x.date <= '2026-11-26').every(x => x.phase === 1)); // 4 sem. de phase 1 à partir d'aujourd'hui
+  assert.ok(futures2.filter(x => x.date > '2026-11-26').every(x => x.phase >= 2));
 
   // Fin du suivi : toutes les séances futures « à faire » sont supprimées, les autres restent.
   const fin = S.reconcilierSoin([S.terminerSuivi(retour, AUJ)], apres2, [], AUJ);
