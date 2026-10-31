@@ -101,6 +101,8 @@ async function main() {
     assert.equal(await page.locator('.feuille [data-puces=objectifs] input:checked').count(), 1);
     await page.getByRole('button', { name: 'Enregistrer' }).click();
     await page.locator('.ligne-seance', { hasText: 'Fractionné' }).waitFor();
+    const corps = await page.evaluate(async () => (await import('./js/magasin.js')).etat.prevues.find(p => p.type === 'fractionne').description.corps);
+    assert.equal(corps, '6 × 1 000 m allure 10 km');
     await capture('03-plan');
 
     etape('Saisie rapide depuis l\'accueil, préremplie par la séance prévue');
@@ -188,7 +190,19 @@ async function main() {
     // Profil : les zones de texte ne déclenchent pas l'autoremplissage du navigateur (adresse e-mail…).
     await page.goto(`${URL_APP}#/reglages/profil`);
     assert.equal(await page.locator('form').getAttribute('autocomplete'), 'off');
-    assert.equal(await page.locator('textarea[name=blessures]').getAttribute('autocomplete'), 'off');
+    // Zones de texte libre : zones éditables (pas de <textarea>), que Safari sur iPhone ne préremplit pas.
+    assert.equal(await page.locator('textarea').count(), 0);
+    const antecedents = page.locator('[name=blessures]');
+    assert.equal(await antecedents.getAttribute('contenteditable'), 'plaintext-only');
+    await page.getByText('Antécédents de blessures').click(); // un appui sur le libellé place le curseur dans la zone
+    assert.equal(await antecedents.evaluate(el => document.activeElement === el), true);
+    await antecedents.fill('Périostite en 2025\nTendon d\'Achille gauche');
+    await page.getByRole('button', { name: 'Enregistrer le profil' }).click();
+    await page.locator('.toast', { hasText: 'Profil enregistré' }).waitFor();
+    const profil = await page.evaluate(async () => (await import('./js/magasin.js')).etat.profil);
+    assert.equal(profil.blessures, 'Périostite en 2025\nTendon d\'Achille gauche');
+    await page.reload();
+    await page.locator('[name=blessures]', { hasText: 'Tendon d\'Achille gauche' }).waitFor();
     await capture('07-semainier');
     await page.goto(`${URL_APP}#/reglages/ia`);
     assert.equal(await page.locator('[name=cle]').getAttribute('type'), 'password');

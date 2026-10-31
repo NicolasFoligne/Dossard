@@ -99,19 +99,40 @@ export function confirmer(message, { ok = 'Confirmer', annuler = 'Annuler', dang
 // ------------------------------------------------------------ Champs de formulaire
 
 export function champ(libelle, controle, aide = null) {
-  return h('label.champ', h('span.champ-libelle', libelle), controle, aide && h('span.champ-aide', aide));
+  // Une zone de texte éditable n'est pas un champ « étiquetable » : un appui sur le libellé lui donne le focus.
+  const focaliser = e => { if (controle?.classList?.contains('zone-texte') && !controle.contains(e.target)) controle.focus(); };
+  return h('label.champ', { onclick: focaliser }, h('span.champ-libelle', libelle), controle, aide && h('span.champ-aide', aide));
 }
 
 export function texte(nom, valeur = '', attrs = {}) {
   return h('input', { type: 'text', name: nom, value: valeur ?? '', autocomplete: 'off', 'data-1p-ignore': true, 'data-lpignore': 'true', 'data-form-type': 'other', ...attrs });
 }
 
-// Zone de texte libre : ni autoremplissage du navigateur (adresse e-mail, contacts…), ni gestionnaire de mots de passe.
-export function zoneTexte(nom, valeur = '', attrs = {}) {
-  return h('textarea', {
-    name: nom, rows: 3, autocomplete: 'off', autocapitalize: 'sentences', spellcheck: true,
-    'data-1p-ignore': true, 'data-lpignore': 'true', 'data-bwignore': true, 'data-form-type': 'other', ...attrs,
-  }, valeur ?? '');
+// Zone de texte libre (notes, antécédents, descriptions…). Ce n'est pas un <textarea> mais une zone éditable :
+// Safari sur iPhone ignore autocomplete="off" et propose l'adresse e-mail au-dessus du clavier dans les champs
+// de formulaire ; il ne le fait pas pour une zone éditable. Correction orthographique et suggestions de mots restent actives.
+// La zone garde un attribut `name` et une propriété `value` (lecture : texte brut, écriture : remplace le texte).
+export function zoneTexte(nom, valeur = '', { rows = 3, placeholder = '', spellcheck = true, ...attrs } = {}) {
+  const el = h('div.zone-texte', {
+    name: nom, role: 'textbox', 'aria-multiline': 'true', 'data-placeholder': placeholder,
+    autocapitalize: 'sentences', autocorrect: spellcheck ? 'on' : 'off', spellcheck,
+    style: { minHeight: `${rows * 1.45 + 1.4}em` }, ...attrs,
+  });
+  // « plaintext-only » : le collage et la frappe restent du texte brut (repli sur « true » si non pris en charge).
+  el.contentEditable = 'plaintext-only';
+  if (el.contentEditable !== 'plaintext-only') {
+    el.contentEditable = 'true';
+    el.addEventListener('paste', e => {
+      e.preventDefault();
+      document.execCommand('insertText', false, e.clipboardData?.getData('text/plain') ?? '');
+    });
+  }
+  Object.defineProperty(el, 'value', {
+    get: () => el.innerText.replace(/\n$/, ''),
+    set: v => { el.textContent = v ?? ''; },
+  });
+  el.value = valeur ?? '';
+  return el;
 }
 
 export function nombre(nom, valeur, attrs = {}) {
@@ -191,7 +212,8 @@ export function lireEchelle(form, nom) {
   return v === undefined || v === '' ? null : Number(v);
 }
 
-export const valeur = (form, nom) => form.elements[nom]?.value ?? '';
+// Valeur d'un champ du formulaire (y compris une zone de texte éditable, repérée par son attribut `name`).
+export const valeur = (form, nom) => (form.elements[nom] ?? form.querySelector(`[name="${nom}"]`))?.value ?? '';
 export const valeurNombre = (form, nom) => lireNombre(valeur(form, nom));
 export const coche = (form, nom) => !!form.elements[nom]?.checked;
 
