@@ -4,6 +4,7 @@ import * as F from '../format.js';
 import * as U from '../ui.js';
 import { ouvrirObjectif, ouvrirResultat } from './formulaires.js';
 import { ouvrirPlanIa } from './planIa.js';
+import { ouvrirAjoutBlessure } from './blessure.js';
 
 const { h } = U;
 
@@ -63,7 +64,9 @@ export function ecranObjectifs() {
   const tri = (a, b) => a.dateEpreuve.localeCompare(b.dateEpreuve);
   return h('div.ecran',
     h('header.entete-ecran', h('h1', 'Objectifs')),
-    h('button.bouton.large', { type: 'button', onclick: () => ouvrirObjectif() }, '＋ Nouvel objectif'),
+    h('div.actions-objectifs',
+      h('button.bouton.large', { type: 'button', onclick: () => ouvrirObjectif() }, '＋ Nouvel objectif'),
+      h('button.bouton.large.bouton-soin', { type: 'button', onclick: () => ouvrirAjoutBlessure() }, '🩹 Ajouter une blessure')),
     M.etat.objectifs.length === 0 && h('p.vide.carte', 'Aucun objectif pour l\'instant. Créez votre premier objectif : un 10 km, un marathon, un triathlon…'),
     groupes.map(([statut, titre]) => {
       const liste = M.etat.objectifs.filter(o => o.statut === statut).sort(statut === 'termine' ? (a, b) => tri(b, a) : tri);

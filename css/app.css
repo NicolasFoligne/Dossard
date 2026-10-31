@@ -791,3 +791,10 @@ details.test-montees .formulaire { padding-bottom: 10px; }
 /* Zone de texte libre éditable (remplace <textarea> : pas d'autoremplissage d'e-mail sur iPhone). */
 .zone-texte { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; cursor: text; -webkit-user-select: text; user-select: text; }
 .zone-texte:empty::before { content: attr(data-placeholder); color: var(--texte-2); pointer-events: none; }
+
+/* ---------------------------------------------------------------- Ajouter une blessure, programmes personnels */
+
+.actions-objectifs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions-objectifs .bouton { padding-left: 10px; padding-right: 10px; }
+.ligne-programme { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--bordure); }
+.carte h2 + p + .ligne-programme { border-top: 0; }
