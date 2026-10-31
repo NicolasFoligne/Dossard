@@ -195,8 +195,12 @@ _(Section tenue à jour au fil des sessions.)_
   dans le contrôle du semainier) ; elliptique (km/h), rameur (distance en mètres, allure /500 m), marche / randonnée (allure /km),
   mobilité / yoga / étirements (ni distance ni allure) — entraînement complémentaire rattaché à tous les objectifs, comme le renforcement.
   Distances en mètres : natation et rameur (`DISCIPLINES_EN_METRES` de `js/format.js`).
-- **Autoremplissage** : les formulaires et zones de texte ont `autocomplete="off"` (et les attributs d'exclusion des gestionnaires
-  de mots de passe), pour éviter les suggestions d'adresse e-mail dans les champs libres (ex. antécédents de blessures).
+- **Autoremplissage** : les formulaires et champs ont `autocomplete="off"` (et les attributs d'exclusion des gestionnaires
+  de mots de passe). Cela ne suffit pas sur iPhone : Safari ignore `autocomplete="off"` et proposait l'adresse e-mail au-dessus
+  du clavier dans les zones de texte. Depuis la v1.4.1, les **zones de texte libre** (`U.zoneTexte` : notes, antécédents, remarques,
+  descriptions, commentaire, réponse collée du mode secours) sont des zones **éditables** (`contenteditable="plaintext-only"`,
+  repli sur `true` avec collage en texte brut), que Safari ne préremplit pas. Elles gardent un attribut `name` et une propriété
+  `value` ; `U.valeur(form, nom)` les lit ; un appui sur le libellé leur donne le focus. Plus aucun `<textarea>` dans l'application.
 
 ### Architecture
 
