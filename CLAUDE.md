@@ -147,8 +147,8 @@ _(Section tenue à jour au fil des sessions.)_
   quand la phase a changé.
 - **Écrans** : carte verte sur l'accueil (phase, exercices du jour, bilan, alertes) ou lien « Suivi de blessure » s'il n'y en a pas ;
   écran `#/soin` (`#/soin/<id>`, `#/soin/liste`) hors barre d'onglets.
-- **Sauvegarde** : format 3 (format 2 : ajout de `blessures` et `bilans` ; format 3 : `seancesSoin`) ; les sauvegardes
-  aux formats 1 et 2 restent importables (listes absentes = vides, puis le planning de soin est régénéré).
+- **Sauvegarde** : format 4 (format 2 : ajout de `blessures` et `bilans` ; format 3 : `seancesSoin` ; format 4 : `programmes`) ;
+  les sauvegardes aux formats 1 à 3 restent importables (listes absentes = vides, puis le planning de soin est régénéré).
 
 ### Séances de soin dans le planning (lot 3, versions 1.3.0 et 1.3.1)
 
@@ -202,6 +202,33 @@ _(Section tenue à jour au fil des sessions.)_
   repli sur `true` avec collage en texte brut), que Safari ne préremplit pas. Elles gardent un attribut `name` et une propriété
   `value` ; `U.valeur(form, nom)` les lit ; un appui sur le libellé leur donne le focus. Plus aucun `<textarea>` dans l'application.
 
+### Catalogue de blessures et programmes proposés par une IA (version 1.5.0)
+
+- **Catalogue** (`js/programmes.js`, `PROGRAMMES`) : tendinopathie d'Achille, périostite tibiale, syndrome de la bandelette
+  ilio-tibiale, syndrome fémoro-patellaire, tendinopathie rotulienne, aponévrosite plantaire, entorse de cheville — chacun en
+  3 phases, même structure (exercices dosés par semaine, `{cote}`, règle de course par phase, critères de passage, signes qui
+  imposent de consulter). Chaque programme peut définir son **test** (`test: { nom, unite, consigne }`, ex. montées sur pointe,
+  descente de marche, équilibre en secondes), saisi dans le bilan (champs `testMonteesNb` / `testMonteesDouleur`, noms historiques)
+  et utilisé par les critères `type: 'test'`. Le bilan ne propose la douleur aux sautillements que si la phase en parle.
+- **« Ajouter une blessure »** (onglet Objectifs, écran Suivi de blessure) : d'abord le catalogue (et les programmes personnels) ;
+  sinon « Décrire la blessure » : zone, côté, date, apparition, douleurs au repos / à la marche / en courant, moments, signes,
+  ce qui aggrave ou soulage, diagnostic ou soins déjà faits, description libre. Brouillon gardé sur le téléphone
+  (`appareil.brouillonBlessure`, jamais exporté) le temps de l'échange avec l'IA.
+- **Texte pour l'IA** (`promptBlessure` de `js/blessure-ia.js`) : questions-réponses (5 questions au plus par message), arrêt et
+  conseil de consulter en cas de signe d'alerte, hypothèse de diagnostic avec niveau de certitude, renvoi au catalogue si la blessure
+  y figure, sinon programme au format de l'application dans un bloc ```json (exemple abrégé + règles du format). Contexte sportif
+  inclus : profil (niveau, allure, performances, antécédents), objectifs en cours, volume des 4 dernières semaines. Rien n'est
+  envoyé automatiquement : copier-coller dans l'application Claude (ou une autre IA).
+- **Programme collé** : `validerProgramme` (validation stricte : 2 à 4 phases, 1 à 6 exercices, id uniques en minuscules,
+  au moins un exercice obligatoire dosé dès la semaine 1, règle de course avec intensités et types connus, critères uniquement
+  `duree`, `derniere` (champs du bilan), `raideur`, `test` — ce dernier exige l'objet `test`) ; refus motivé et
+  « Copier les corrections pour l'IA » ; aperçu (avertissement, signes de consultation, détail des phases) ; « Enregistrer et démarrer
+  le suivi ». Les 7 programmes du catalogue passent aussi cette validation (test unitaire).
+- **Programmes personnels** : magasin `programmes` (identifiant `perso_…`, `source: 'ia'`), ajoutés au référentiel par
+  `definirProgrammesPerso` ; ils fonctionnent comme le catalogue (séances de soin, bilan, critères, contraintes du plan IA).
+  Supprimables depuis l'écran Suivi de blessure s'ils ne servent à aucun suivi.
+- **Sauvegarde** : format 4 (ajout de `programmes`, revérifiés à l'import ; un suivi dont le programme manque est refusé).
+
 ### Architecture
 
 - `index.html`, `manifest.webmanifest`, `sw.js` à la racine ; `.nojekyll` pour que GitHub Pages serve les fichiers tels quels.
@@ -209,15 +236,18 @@ _(Section tenue à jour au fil des sessions.)_
   - `format.js` : formats français (dates, durées, allures, nombres) ;
   - `domaine.js` : règles métier pures (référentiels, cycle de vie, mutualisation, allure, alertes, agrégats) ;
   - `sauvegarde.js` : construction et validation de l'export JSON (pur) ;
-  - `soin.js` : suivi de blessure — programmes, bilans, exercices du jour, alertes, critères de passage, contraintes du plan IA,
+  - `programmes.js` : catalogue des programmes de soin (contenu générique) ;
+  - `blessure-ia.js` : nouvelle blessure — texte à copier dans une IA, validation du programme collé (pur) ;
+  - `soin.js` : suivi de blessure — référentiel des programmes (catalogue + personnels), bilans, exercices du jour, alertes, critères de passage, contraintes du plan IA,
     séances de soin du planning (génération, lien avec le bilan) (pur) ;
   - `ia.js` : contexte envoyé, prompt, schéma JSON de la réponse, validation, remplacement des séances (pur) ;
   - `ia-api.js` : appel de l'API Anthropic en streaming, essais et gestion des erreurs ;
-  - `db.js` : IndexedDB (base `dossard`, version 3) ; magasins `kv` (profil, semainier, réglages), `objectifs`, `prevues`, `realisees`, `blessures`, `bilans`, `seancesSoin`
+  - `db.js` : IndexedDB (base `dossard`, version 4) ; magasins `kv` (profil, semainier, réglages), `objectifs`, `prevues`, `realisees`, `blessures`, `bilans`, `seancesSoin`, `programmes`
     — exportés (dont `kv.plan`) — et `appareil` (clé API, date du dernier export, première utilisation) — **jamais exporté** ;
   - `magasin.js` : état en mémoire + actions qui écrivent dans IndexedDB ;
   - `ui.js` : création d'éléments, feuilles modales, champs ; `miseajour.js` : service worker et bandeau de mise à jour ;
-  - `ecrans/` : accueil, plan, planIa (génération, mode secours, aperçu), objectifs, historique, réglages, formulaires, soin (suivi de blessure).
+  - `ecrans/` : accueil, plan, planIa (génération, mode secours, aperçu), objectifs, historique, réglages, formulaires, soin (suivi de blessure),
+    blessure (ajouter une blessure : catalogue, description pour l'IA, programme collé).
 - Navigation par ancre (`#/accueil`, `#/plan`, `#/objectifs`, `#/historique`, `#/reglages[/profil|semainier|ia|sauvegarde|apropos]`, `#/soin[/<id>|/liste]`).
 - L'onglet **Plan** : carte du plan IA (phase, analyse, « Recalculer le plan »), séances prévues (4 semaines affichées, puis bouton « Afficher les semaines suivantes »), ajout manuel.
 
@@ -231,7 +261,8 @@ _(Section tenue à jour au fil des sessions.)_
 
 - `node tests/regles.test.js` : règles métier (cycle de vie, mutualisation, allure, alertes, export/import).
 - `node tests/soin.test.js` : suivi de blessure (cycle de vie, bilans, exercices du jour, alertes, critères, contraintes et validation du plan IA,
-  séances de soin du planning : génération, régénération, lien avec le bilan, isolement du plan IA, export/import).
+  séances de soin du planning : génération, régénération, lien avec le bilan, isolement du plan IA, export/import ;
+  catalogue, programmes proposés par une IA : validation, refus motivés, texte pour l'IA, sauvegarde).
 - `node tests/ia.test.js` : génération IA (contexte, validation stricte, remplacement, streaming et essais avec API simulée).
 - `node tests/statique.test.js` : manifest, service worker, chemins relatifs, version, absence de secrets.
 - `node tests/e2e.cjs [dossier-captures]` : parcours complet dans Chromium (Playwright), servi sous `/dossard/`,
