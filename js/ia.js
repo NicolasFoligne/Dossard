@@ -2,7 +2,7 @@
 // contexte envoyé, prompt, schéma JSON de la réponse, validation stricte, remplacement des séances.
 import * as D from './domaine.js';
 import * as S from './soin.js';
-import { ajouterJours, ecartJours, lundiDe } from './format.js';
+import { ajouterJours, ecartJours, lundiDe, minutesVersHeure, heureVersMinutes } from './format.js';
 
 const SEMAINES_HISTORIQUE = 8;
 
@@ -11,14 +11,15 @@ const SEMAINES_HISTORIQUE = 8;
 const SEANCE = {
   type: 'object',
   additionalProperties: false,
-  required: ['date', 'discipline', 'type', 'intensite', 'dureeMin', 'distanceKm', 'echauffement', 'corps', 'retourCalme', 'objectifIds'],
+  required: ['date', 'heureDebut', 'discipline', 'type', 'intensite', 'dureeMin', 'distanceKm', 'echauffement', 'corps', 'retourCalme', 'objectifIds'],
   properties: {
     date: { type: 'string', format: 'date', description: 'AAAA-MM-JJ, une des dates du calendrier' },
     discipline: { type: 'string', enum: D.DISCIPLINES.map(d => d.id) },
     type: { type: 'string', enum: D.TYPES_SEANCE.map(t => t.id) },
     intensite: { type: 'string', enum: D.INTENSITES.map(i => i.id) },
+    heureDebut: { type: 'string', description: 'HH:MM : la séance tient entièrement dans un des créneaux du jour' },
     dureeMin: { type: 'integer', description: 'Durée totale en minutes' },
-    distanceKm: { type: ['number', 'null'], description: 'Distance en km (natation : 1.5 pour 1 500 m), null si sans objet' },
+    distanceKm: { type: ['number', 'null'], description: 'Distance en km (natation et rameur : 1.5 pour 1 500 m), null si sans objet' },
     echauffement: { type: 'string' },
     corps: { type: 'string' },
     retourCalme: { type: 'string' },
@@ -57,8 +58,16 @@ const enMinutes = s => (s ? Math.round(s / 60) : null);
 // Séances futures conservées par un recalcul : tout sauf les séances IA « à faire ».
 export const estRemplacable = (p, aujourdhui) => p.source === 'ia' && p.etat === 'a_faire' && p.date >= aujourdhui;
 
+// Retire l'intervalle [a, b[ d'une liste de créneaux (en minutes) ; ne garde que les morceaux d'au moins 15 min.
+function soustraire(creneaux, a, b) {
+  return creneaux.flatMap(c => (b <= c.debut || a >= c.fin ? [c] : [{ debut: c.debut, fin: a }, { debut: b, fin: c.fin }]))
+    .filter(c => c.fin - c.debut >= D.CRENEAU_PAS);
+}
+
 // Rassemble tout ce qui est envoyé à l'IA et sert ensuite à valider sa réponse.
-export function construireContexte(etat, aujourdhui) {
+// `minutesActuelles` (heure courante, en minutes) : les créneaux du jour déjà passés sont retirés.
+export function construireContexte(etat, aujourdhui, { minutesActuelles = null } = {}) {
+  const semainier = D.normaliserSemainier(etat.semainier);
   const objectifs = etat.objectifs.filter(o => o.statut === 'en_cours');
   if (!objectifs.length) throw new D.ErreurMetier('Aucun objectif en cours : démarrez un objectif pour générer un plan.');
   const fin = objectifs.map(o => o.dateEpreuve).sort().at(-1);
@@ -75,7 +84,7 @@ export function construireContexte(etat, aujourdhui) {
 
   // Calendrier des créneaux autorisés, semaine par semaine, déduction faite de ce qui est déjà prévu ou réalisé.
   const semaines = [];
-  const plafond = Number(etat.semainier.plafondSeances) || 0;
+  const plafond = Number(semainier.plafondSeances) || 0;
   for (let lundi = lundiDe(aujourdhui); lundi < fin; lundi = ajouterJours(lundi, 7)) {
     const dimanche = ajouterJours(lundi, 6);
     const dansSemaine = x => x.date >= lundi && x.date <= dimanche;
@@ -84,12 +93,27 @@ export function construireContexte(etat, aujourdhui) {
     for (let i = 0; i < 7; i++) {
       const date = ajouterJours(lundi, i);
       if (date < aujourdhui || date >= fin || epreuves.has(date)) continue;
-      const j = etat.semainier.jours[i];
-      if (!j?.disponible || !j.disciplines?.length) continue;
-      const occupe = [...conservees, ...realisees].filter(x => x.date === date).reduce((s, x) => s + (enMinutes(x.dureeS) ?? 0), 0);
-      const dureeMaxMin = j.dureeMaxMin ? j.dureeMaxMin - occupe : null;
-      if (dureeMaxMin !== null && dureeMaxMin <= 0) continue;
-      jours.push({ date, jour: D.JOURS[i], dureeMaxMin, disciplines: [...j.disciplines] });
+      const j = semainier.jours[i];
+      if (!j.disponible || !j.disciplines.length || !j.creneaux.length) continue;
+      let creneaux = j.creneaux;
+      // Aujourd'hui : on ne propose que ce qui reste de la journée (au quart d'heure suivant).
+      if (date === aujourdhui && minutesActuelles !== null) {
+        creneaux = soustraire(creneaux, 0, Math.ceil(minutesActuelles / D.CRENEAU_PAS) * D.CRENEAU_PAS);
+      }
+      // Séances déjà prévues ce jour-là : celles qui ont une heure libèrent leur intervalle, les autres réduisent la durée disponible.
+      let sansHeure = 0;
+      for (const x of [...conservees, ...realisees].filter(y => y.date === date)) {
+        const h = heureVersMinutes(x.heureDebut);
+        if (h !== null && x.dureeS) creneaux = soustraire(creneaux, h, h + enMinutes(x.dureeS));
+        else sansHeure += enMinutes(x.dureeS) ?? 0;
+      }
+      const dureeMaxMin = creneaux.reduce((s, c) => s + c.fin - c.debut, 0) - sansHeure;
+      if (!creneaux.length || dureeMaxMin <= 0) continue;
+      jours.push({
+        date, jour: D.JOURS[i],
+        creneaux: creneaux.map(c => ({ debut: minutesVersHeure(c.debut), fin: minutesVersHeure(c.fin) })),
+        dureeMaxMin, disciplines: [...j.disciplines],
+      });
     }
     semaines.push({ lundi, plafondRestant: plafond ? Math.max(0, plafond - dejaCompte) : null, jours });
   }
@@ -106,7 +130,10 @@ export function construireContexte(etat, aujourdhui) {
     fin,
     profil: etat.profil,
     plafondSeances: plafond || null,
-    semainier: etat.semainier.jours.map((j, i) => ({ jour: D.JOURS[i], ...j })),
+    semainier: semainier.jours.map((j, i) => ({
+      jour: D.JOURS[i], disponible: j.disponible, disciplines: j.disciplines,
+      creneaux: j.creneaux.map(c => `${minutesVersHeure(c.debut)}-${minutesVersHeure(c.fin)}`),
+    })),
     objectifs: objectifs.map(o => ({
       id: o.id,
       nom: o.nom,
@@ -133,7 +160,7 @@ export function construireContexte(etat, aujourdhui) {
     })),
     volumesHebdoMin: [...volumes].sort().map(([lundi, minutes]) => ({ lundi, minutes })),
     seancesConservees: conservees.map(p => ({
-      date: p.date, discipline: p.discipline, type: p.type, dureeMin: enMinutes(p.dureeS), distanceKm: p.distanceKm,
+      date: p.date, heureDebut: p.heureDebut ?? null, discipline: p.discipline, type: p.type, dureeMin: enMinutes(p.dureeS), distanceKm: p.distanceKm,
     })),
     calendrier: semaines,
     ...blessuresContexte(etat, aujourdhui),
@@ -159,7 +186,7 @@ const SYSTEME = `Tu es un entraîneur expert en course à pied et en triathlon. 
 
 Contraintes impératives (une réponse qui ne les respecte pas est rejetée automatiquement) :
 1. Une séance ne peut être placée qu'à une date figurant dans « calendrier », avec une discipline listée pour ce jour.
-2. La somme des durées des séances d'un même jour ne dépasse jamais « dureeMaxMin » de ce jour (null = pas de limite).
+2. Chaque séance a une « heureDebut » (HH:MM) et tient entièrement dans l'un des « creneaux » de son jour (de « debut » à « fin ») ; deux séances d'un même jour ne se chevauchent pas ; la somme des durées d'un jour ne dépasse jamais « dureeMaxMin ».
 3. Le nombre de séances d'une semaine ne dépasse jamais « plafondRestant » de cette semaine (null = pas de limite).
 4. Aucune séance avant « debut », à partir de « fin », ni le jour d'une épreuve.
 5. Les « seancesConservees » sont maintenues telles quelles : n'en crée pas de doublon et intègre-les dans la charge.
@@ -170,13 +197,13 @@ Principes de coaching à appliquer :
 - environ 80 % du volume en intensité facile ;
 - une semaine allégée toutes les 3 à 4 semaines ;
 - phases foncière, puis spécifique, puis affûtage, avec un affûtage adapté à la distance de chaque épreuve ;
-- renforcement musculaire régulier ;
+- renforcement musculaire régulier ; les disciplines complémentaires (home trainer, VTT, elliptique, rameur, marche, mobilité) ne sont utilisées que les jours où elles sont listées ;
 - enchaînements vélo-course réguliers pour le triathlon, surtout en phase spécifique ;
 - prise en compte des antécédents de blessures du profil ;
-- en cas de suivi de blessure (« blessures ») : l'athlète fait ses exercices de soin à part, ne les planifie pas ; les séances de renforcement du plan ne chargent pas la zone blessée (pas de sauts, de pliométrie ni de montées sur pointe) ; maintiens l'endurance par le vélo et la natation quand la course est limitée ; après la projection, reprise de course très progressive ; explique dans l'analyse l'effet de la blessure sur la préparation ;
+- en cas de suivi de blessure (« blessures ») : l'athlète fait ses exercices de soin à part, ne les planifie pas ; les séances de renforcement du plan ne chargent pas la zone blessée (pas de sauts, de pliométrie ni de montées sur pointe) ; maintiens l'endurance par le vélo (ou home trainer), la natation, l'elliptique ou le rameur quand la course est limitée ; après la projection, reprise de course très progressive ; explique dans l'analyse l'effet de la blessure sur la préparation ;
 - temps visés confrontés au niveau réel (performances, allures récentes) : dis franchement s'ils sont irréalistes et propose une cible crédible dans l'analyse.
 
-Rédaction : en français, concis. Pour chaque séance, échauffement, corps de séance et retour au calme tiennent en une ou deux phrases précises (allures, zones, répétitions, récupérations). « dureeMin » est un entier en minutes. « distanceKm » est en kilomètres (natation : 1.5 pour 1 500 m) ou null pour le renforcement. « objectifIds » liste les identifiants des objectifs servis par la séance. « analyse » fait au plus 10 phrases.
+Rédaction : en français, concis. Pour chaque séance, échauffement, corps de séance et retour au calme tiennent en une ou deux phrases précises (allures, zones, répétitions, récupérations). « dureeMin » est un entier en minutes. « distanceKm » est en kilomètres (natation et rameur : 1.5 pour 1 500 m) ou null pour le renforcement et la mobilité. « objectifIds » liste les identifiants des objectifs servis par la séance. « analyse » fait au plus 10 phrases.
 
 Réponds uniquement par un objet JSON conforme à ce schéma, sans texte autour :
 ${JSON.stringify(SCHEMA_PLAN)}`;
@@ -232,6 +259,7 @@ export function validerPlan(brut, contexte) {
   const objectifsParId = new Map(contexte.objectifs.map(o => [o.id, o]));
   const dureeParJour = new Map();
   const nbParSemaine = new Map();
+  const horairesParJour = new Map(); // date → [{ debut, fin, ref }] pour détecter les chevauchements
   const seances = [];
 
   brut.seances.forEach((s, i) => {
@@ -251,6 +279,18 @@ export function validerPlan(brut, contexte) {
     if (!D.TYPES_SEANCE.some(t => t.id === s.type)) erreurs.push(`${ref} : type inconnu « ${s.type} ».`);
     if (!D.INTENSITES.some(t => t.id === s.intensite)) erreurs.push(`${ref} : intensité inconnue « ${s.intensite} ».`);
     if (!Number.isInteger(s.dureeMin) || s.dureeMin <= 0) erreurs.push(`${ref} : « dureeMin » doit être un entier positif.`);
+    const heure = heureVersMinutes(texteSur(s.heureDebut));
+    if (heure === null) erreurs.push(`${ref} : « heureDebut » doit être une heure au format HH:MM.`);
+    else if (Number.isInteger(s.dureeMin) && s.dureeMin > 0) {
+      const fin = heure + s.dureeMin;
+      const dedans = jour.creneaux.some(c => heureVersMinutes(c.debut) <= heure && fin <= heureVersMinutes(c.fin));
+      if (!dedans) {
+        erreurs.push(`${ref} : ${s.heureDebut} + ${s.dureeMin} min ne tient dans aucun créneau du ${jour.jour.toLowerCase()} ${date} `
+          + `(créneaux : ${jour.creneaux.map(c => `${c.debut}-${c.fin}`).join(', ')}).`);
+      }
+      if (!horairesParJour.has(date)) horairesParJour.set(date, []);
+      horairesParJour.get(date).push({ debut: heure, fin, ref });
+    }
     if (s.distanceKm !== null && s.distanceKm !== undefined && !(typeof s.distanceKm === 'number' && s.distanceKm >= 0)) {
       erreurs.push(`${ref} : « distanceKm » doit être un nombre positif ou null.`);
     }
@@ -265,11 +305,12 @@ export function validerPlan(brut, contexte) {
     const demandes = Array.isArray(s.objectifIds) ? s.objectifIds.filter(id => idsEnCours.includes(id) && compatibles.includes(id)) : [];
     seances.push({
       date,
+      heureDebut: heure === null ? null : texteSur(s.heureDebut),
       discipline: s.discipline,
       type: s.type,
       intensite: s.intensite,
       dureeS: (Number(s.dureeMin) || 0) * 60,
-      distanceKm: typeof s.distanceKm === 'number' && s.distanceKm > 0 && s.discipline !== 'renforcement' ? s.distanceKm : null,
+      distanceKm: typeof s.distanceKm === 'number' && s.distanceKm > 0 && D.discipline(s.discipline).distance !== null ? s.distanceKm : null,
       description: { echauffement: texteSur(s.echauffement), corps: texteSur(s.corps), retourCalme: texteSur(s.retourCalme) },
       objectifIds: demandes.length ? demandes : compatibles,
     });
@@ -278,6 +319,12 @@ export function validerPlan(brut, contexte) {
   for (const [date, total] of dureeParJour) {
     const max = jours.get(date)?.dureeMaxMin;
     if (max !== null && max !== undefined && total > max) erreurs.push(`${date} : ${total} min de séances pour un maximum de ${max} min ce jour-là.`);
+  }
+  for (const [date, horaires] of horairesParJour) {
+    horaires.sort((a, b) => a.debut - b.debut);
+    for (let k = 1; k < horaires.length; k++) {
+      if (horaires[k].debut < horaires[k - 1].fin) erreurs.push(`${date} : ${horaires[k - 1].ref} et ${horaires[k].ref} se chevauchent.`);
+    }
   }
   for (const [lundi, nb] of nbParSemaine) {
     const max = plafonds.get(lundi);
@@ -288,7 +335,7 @@ export function validerPlan(brut, contexte) {
     .filter(p => p && DATE.test(p.debut ?? '') && DATE.test(p.fin ?? '') && p.debut <= p.fin)
     .map(p => ({ nom: texteSur(p.nom), debut: p.debut, fin: p.fin, description: texteSur(p.description) }));
 
-  seances.sort((a, b) => a.date.localeCompare(b.date));
+  seances.sort((a, b) => a.date.localeCompare(b.date) || (a.heureDebut ?? '').localeCompare(b.heureDebut ?? ''));
   return {
     erreurs,
     plan: erreurs.length ? null : {

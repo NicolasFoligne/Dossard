@@ -196,7 +196,7 @@ test('plan IA : contexte, rejet des courses interdites, phase mémorisée et pla
   assert.equal('blessures' in IA.construireContexte({ ...etat, blessures: [] }, AUJ), false);
 
   const seances = c.calendrier.slice(0, 2).flatMap(sem => sem.jours.map(j => ({
-    date: j.date, discipline: 'course', type: 'endurance', intensite: 'facile', dureeMin: 30, distanceKm: 5,
+    date: j.date, heureDebut: j.creneaux[0].debut, discipline: 'course', type: 'endurance', intensite: 'facile', dureeMin: 30, distanceKm: 5,
     echauffement: '', corps: '', retourCalme: '', objectifIds: [],
   })));
   const rejet = IA.validerPlan({ analyse: '', phases: [], seances }, c);
