@@ -221,7 +221,7 @@ test('export/import : suivis, bilans et séances de soin inclus, anciennes sauve
   const seancesSoin = S.reconcilierSoin([s], [], liste, AUJ).aMettre;
   const etat = { profil: D.profilParDefaut(), semainier: D.semainierParDefaut(), reglages: D.reglagesParDefaut(), plan: null, objectifs: [], prevues: [], realisees: [], blessures: [s], bilans: liste, seancesSoin };
   const json = construireExport(etat);
-  assert.equal(json.format, 3);
+  assert.equal(json.format, 4);
   const relu = lireImport(JSON.stringify(json));
   assert.deepEqual(relu.blessures, [s]);
   assert.deepEqual(relu.bilans, liste);
@@ -377,4 +377,142 @@ test('planning de soin : invisible pour le plan IA (calendrier, plafond, séance
   assert.ok(!JSON.stringify(avec).includes('montees_lentes'));
   assert.equal(avec.calendrier[0].plafondRestant, 2);
   assert.ok(seancesSoin.length > 0);
+});
+
+// ------------------------------------------------------------ Catalogue et programmes personnels (v1.5.0)
+
+import * as B from '../js/blessure-ia.js';
+
+// Programme tel qu'une IA pourrait le proposer (2 phases).
+const PROGRAMME_IA = {
+  libelle: 'Tendinopathie haute des ischio-jambiers',
+  court: 'Ischio-jambiers',
+  description: 'Douleur profonde sous la fesse, assis et en côte.',
+  regleDouleur: ['Douleur ≤ 3/10 pendant les exercices.'],
+  aEviter: ['Étirements des ischio-jambiers en phase douloureuse.'],
+  consulter: ['Hématome important ou douleur brutale avec claquement.'],
+  avisMedical: 'Avis médical conseillé.',
+  entretien: '2 séances de pont par semaine.',
+  test: { nom: 'Test du pont sur une jambe', unite: 'répétitions', consigne: 'Pont fessier sur la jambe {cote}, jusqu\'à la fatigue.' },
+  phases: [
+    {
+      numero: 1, nom: 'Calmer', dureeMinSem: 2, dureeMaxSem: 3, but: 'Calmer.',
+      exercices: [
+        { id: 'iso_pont', nom: 'Pont isométrique', cible: 'Ischio-jambiers', frequence: 'Tous les jours', alterne: false, facultatif: false, consignes: ['Tenez 30 s.'], dosage: ['5 × 30 s', 'Jambe {cote} seule · 5 × 30 s'] },
+        { id: 'marche', nom: 'Marche', cible: 'Circulation', frequence: 'Si besoin', alterne: false, facultatif: true, consignes: ['20 min.'], dosage: ['20 min'] },
+      ],
+      course: { texte: 'Footing facile 20 min si ≤ 3/10, sans côte.', autorisee: 'si_douleur_ok', intensites: ['facile'], types: ['endurance'], dureeMaxMin: 20 },
+      conseils: ['Évitez la position assise prolongée.'],
+      criteres: [
+        { id: 'duree', type: 'duree', jours: 14, libelle: '2 semaines' },
+        { id: 'test', type: 'test', nbMin: 20, douleurMax: 2, fenetre: 14, libelle: '20 ponts sur la jambe {cote}' },
+      ],
+    },
+    {
+      numero: 2, nom: 'Renforcer', dureeMinSem: 4, dureeMaxSem: 8, but: 'Renforcer.',
+      exercices: [
+        { id: 'souleve', nom: 'Soulevé de terre jambes tendues', cible: 'Ischio-jambiers', frequence: 'Un jour sur deux', alterne: true, consignes: ['Dos droit.'], dosage: ['3 × 10', null, '4 × 8'] },
+      ],
+      course: { texte: 'Facile ≤ 45 min.', autorisee: true, intensites: ['facile', 'moderee'], types: ['endurance', 'sortie_longue'], dureeMaxMin: 45 },
+      criteres: [{ id: 'course', type: 'derniere', champ: 'douleurCourse', max: 1, fenetre: 7, libelle: 'Course ≤ 1/10' }],
+    },
+  ],
+};
+
+test('catalogue : 7 programmes valides, utilisables de bout en bout (séances, critères, contraintes du plan IA)', () => {
+  assert.deepEqual(S.PROGRAMMES.map(p => p.id), ['achille_corps', 'periostite', 'bandelette', 'femoro_patellaire', 'tendon_rotulien', 'aponevrosite', 'entorse_cheville']);
+  for (const p of S.PROGRAMMES) {
+    assert.deepEqual(B.validerProgramme(p).erreurs, [], p.id);
+    const s = S.creerSuivi({ programme: p.id, cote: 'droit', debut: AUJ });
+    assert.match(S.nomSuivi(s), / droite$/);
+    const seances = S.reconcilierSoin([s], [], [], AUJ).aMettre;
+    assert.deepEqual([...new Set(seances.map(x => x.phase))], p.phases.map(x => x.numero), p.id);
+    assert.ok(seances.every(x => x.exercices.length > 0 && x.exercices.every(e => !e.dosage.includes('{cote}'))), p.id);
+    assert.equal(S.criteresPassage(s, [], AUJ).criteres.length, p.phases[0].criteres.length);
+    const ctx = S.contexteIa([s], [], AUJ)[0];
+    assert.equal(ctx.projection.length, p.phases.length);
+  }
+  // Entorse : pas de course en phase 1 ; test d'équilibre en secondes.
+  const entorse = S.creerSuivi({ programme: 'entorse_cheville', cote: 'gauche', debut: AUJ });
+  assert.equal(S.contexteIa([entorse], [], AUJ)[0].projection[0].courseAutorisee, false);
+  const p2 = S.changerPhase(entorse, 2, AUJ);
+  const bilan = S.enregistrerBilan({ blessureId: p2.id, date: AUJ, raideurMatin: 0, douleurMarche: 0, douleurEscaliers: 0, testMonteesNb: 25, testMonteesDouleur: 0 }, p2, []);
+  assert.equal(S.criteresPassage(p2, [bilan], AUJ).criteres.find(c => c.id === 'test').valeur, '25 secondes à 0/10');
+});
+
+test('programme proposé par une IA : validé, ajouté au référentiel, suivi comme un programme du catalogue', () => {
+  const { programme, erreurs } = B.validerProgramme(PROGRAMME_IA, { maintenant: 1 });
+  assert.deepEqual(erreurs, []);
+  assert.match(programme.id, /^perso_[a-z0-9]+$/);
+  assert.equal(programme.source, 'ia');
+  assert.equal(programme.phases[1].exercices[0].dosage[1], null);
+  assert.equal(S.programme(programme.id), null);
+  S.definirProgrammesPerso([programme]);
+  try {
+    assert.equal(S.tousLesProgrammes().length, 8);
+    const s = S.creerSuivi({ programme: programme.id, cote: 'gauche', debut: AUJ });
+    assert.equal(S.nomSuivi(s), 'Ischio-jambiers gauche');
+    const seances = S.reconcilierSoin([s], [], [], AUJ).aMettre;
+    assert.deepEqual(seances[0].exercices.map(e => `${e.id} ${e.dosage}`), ['iso_pont 5 × 30 s']); // la marche facultative n'en fait pas partie
+    assert.ok(seances.some(x => x.phase === 2 && x.exercices[0].id === 'souleve'));
+    const ctx = S.contexteIa([s], [], AUJ)[0];
+    assert.equal(ctx.projection[1].dureeMaxMin, 45);
+    assert.deepEqual(S.erreursSeanceSoin({ date: AUJ, discipline: 'course', type: 'fractionne', intensite: 'facile', dureeMin: 20 }, [ctx]).length, 1);
+  } finally {
+    S.definirProgrammesPerso([]);
+  }
+});
+
+test('programme proposé par une IA : refus motivés', () => {
+  const erreurs = o => B.validerProgramme(o).erreurs.join(' | ');
+  const avec = (chemin, valeur) => {
+    const p = structuredClone(PROGRAMME_IA);
+    chemin(p, valeur);
+    return p;
+  };
+  assert.match(erreurs(null), /objet JSON/);
+  assert.match(erreurs({ ...PROGRAMME_IA, consulter: [] }), /consulter/);
+  assert.match(erreurs({ ...PROGRAMME_IA, phases: [PROGRAMME_IA.phases[0]] }), /2 à 4 phases/);
+  assert.match(erreurs(avec(p => { p.phases[0].dureeMinSem = 4; })), /dureeMinSem/);
+  assert.match(erreurs(avec(p => { p.phases[0].exercices[1].id = 'iso_pont'; })), /en double/);
+  assert.match(erreurs(avec(p => { p.phases[0].exercices[0].id = 'Pont Iso'; })), /minuscules/);
+  assert.match(erreurs(avec(p => { p.phases[1].exercices[0].dosage = [null, '3 × 10']; })), /dosé dès la semaine 1/);
+  assert.match(erreurs(avec(p => { p.phases[0].course.autorisee = 'oui'; })), /autorisee/);
+  assert.match(erreurs(avec(p => { p.phases[0].course.intensites = ['max']; })), /intensité de course inconnue/);
+  assert.match(erreurs(avec(p => { p.phases[1].criteres[0].champ = 'douleurGenou'; })), /champ » parmi/);
+  assert.match(erreurs(avec(p => { p.phases[1].criteres[0].type = 'humeur'; })), /type « humeur » inconnu/);
+  assert.match(erreurs(avec(p => { delete p.test; })), /exige l'objet « test »/);
+  assert.match(B.promptCorrection(['erreur A', 'erreur B']), /refusé[\s\S]*- erreur A\n- erreur B/);
+});
+
+test('texte à copier dans l\'IA : description, contexte sportif, catalogue et format attendu', () => {
+  const objectif = D.demarrerObjectif(D.creerObjectif({ nom: 'Marathon de Paris', sport: 'course', type: 'marathon', dateEpreuve: '2027-04-11', tempsViseS: 3 * 3600 + 30 * 60 }), AUJ);
+  const r = D.enregistrerRealisee({ date: '2026-10-27', discipline: 'course', dureeS: 3600, distanceKm: 12 }, [objectif]);
+  const etat = { profil: { ...D.profilParDefaut(), niveau: 'Confirmé', blessures: 'entorse en 2024' }, objectifs: [objectif], realisees: [r] };
+  const texte = B.promptBlessure({ zone: 'Cuisse (arrière)', cote: 'Gauche', debut: '2026-10-20', douleurCourse: 5, moments: ['Pendant l\'effort'], signes: ['Raideur'], libre: 'douleur sous la fesse' }, etat, AUJ);
+  for (const attendu of ['Questions-réponses', 'Zone : Cuisse (arrière) · côté : Gauche', 'en courant : 5/10', 'Pendant l\'effort', 'douleur sous la fesse',
+    'Niveau : Confirmé', 'entorse en 2024', 'Marathon de Paris (Marathon, le 2027-04-11, temps visé 3 h 30)', 'semaine du 2026-10-26 : 60 min (course)',
+    'Périostite tibiale', '"si_douleur_ok"', '"douleurSautillements"', 'Commence par tes questions.']) {
+    assert.ok(texte.includes(attendu), attendu);
+  }
+  assert.ok(!texte.includes('cle'), 'aucune clé API');
+});
+
+test('sauvegarde : programmes personnels exportés et réimportés, suivi sans programme refusé', () => {
+  const { programme } = B.validerProgramme(PROGRAMME_IA, { maintenant: 1 });
+  S.definirProgrammesPerso([programme]);
+  try {
+    const s = S.creerSuivi({ programme: programme.id, cote: 'droit', debut: AUJ });
+    const etat = { profil: D.profilParDefaut(), semainier: D.semainierParDefaut(), reglages: D.reglagesParDefaut(), plan: null, objectifs: [], prevues: [], realisees: [], blessures: [s], bilans: [], seancesSoin: [], programmes: [programme] };
+    const json = construireExport(etat);
+    assert.equal(json.format, 4);
+    const relu = lireImport(JSON.stringify(json));
+    assert.deepEqual(relu.programmes, [programme]);
+    const sans = { ...json, donnees: { ...json.donnees, programmes: [] } };
+    assert.throws(() => lireImport(JSON.stringify(sans)), /programme est absent/);
+    const abime = { ...json, donnees: { ...json.donnees, programmes: [{ ...programme, phases: [] }] } };
+    assert.throws(() => lireImport(JSON.stringify(abime)), /programme de soin/);
+  } finally {
+    S.definirProgrammesPerso([]);
+  }
 });
