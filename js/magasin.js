@@ -257,6 +257,9 @@ export async function supprimerProgrammePerso(id) {
   notifier();
 }
 
+// Préférences de la séance guidée (voix, bips), propres à ce téléphone.
+export const enregistrerPreferencesSeance = prefs => ecrireAppareil('preferencesSeance', prefs);
+
 // Brouillon de description d'une blessure (sur ce téléphone seulement, le temps de l'échange avec l'IA).
 export const enregistrerBrouillonBlessure = brouillon => ecrireAppareil('brouillonBlessure', brouillon);
 export async function effacerBrouillonBlessure() {

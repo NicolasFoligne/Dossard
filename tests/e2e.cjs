@@ -37,6 +37,14 @@ async function main() {
       viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
       locale: 'fr-FR', timezoneId: 'Europe/Paris', acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'],
     });
+    // Voix de la séance guidée : on enregistre les annonces au lieu de les prononcer.
+    await contexte.addInitScript(() => {
+      window.__paroles = [];
+      if (window.speechSynthesis) {
+        window.speechSynthesis.speak = u => window.__paroles.push(u.text);
+        window.speechSynthesis.cancel = () => {};
+      }
+    });
     const page = await contexte.newPage();
     page.on('pageerror', e => erreurs.push(`pageerror: ${e.message}`));
     page.on('console', m => { if (m.type() === 'error') erreurs.push(`console: ${m.text()}`); });
@@ -449,6 +457,59 @@ async function main() {
     await page.locator('.boite', { hasText: 'Recalculer' }).getByRole('button', { name: 'Plus tard' }).click();
     soin = await etatSoin();
     assert.deepEqual([...new Set(soin.futures.map(x => x.phase))], [1, 2, 3]);
+
+    etape('Séance de soin guidée : fiche « Comment faire », minuteur, voix, pause, tempo, fin');
+    await page.goto(`${URL_APP}#/accueil`);
+    await page.locator('.jour-auj .pastille-soin').click();
+    await page.getByRole('button', { name: 'Remettre à faire' }).click();
+    await page.locator('.jour-auj .pastille-soin.etat-a_faire').click();
+    await page.locator('.feuille details.fiche summary').first().click();
+    await page.locator('.feuille .fiche-corps', { hasText: 'Position de départ' }).first().waitFor();
+    await page.getByText('Montez lentement sur la pointe des pieds jusqu\'à mi-hauteur').waitFor();
+    await capture('21-fiche-exercice');
+    await page.getByRole('button', { name: '▶ Commencer la séance guidée' }).click();
+    const guidee = page.locator('.feuille .seance-guidee');
+    await guidee.getByText('Sur les 2 pieds · 5 × 45 s').waitFor();
+    await guidee.getByRole('button', { name: '▶ Démarrer' }).click();
+    await guidee.locator('.minuteur-serie', { hasText: 'Série 1 / 5' }).waitFor();
+    assert.match(await guidee.locator('.minuteur-grand').textContent(), /^0:4[45]$/);
+    assert.ok((await page.evaluate(() => window.__paroles)).includes('Isométrie debout, jambe tendue. Série 1 sur 5. Tenez 45 secondes.'));
+    await page.waitForTimeout(2300); // le compte à rebours arrondit à la seconde supérieure
+    assert.match(await guidee.locator('.minuteur-grand').textContent(), /^0:4[123]$/);
+    await capture('22-seance-guidee');
+    await guidee.getByRole('button', { name: '⏸ Pause' }).click();
+    const fige = await guidee.locator('.minuteur-grand').textContent();
+    await page.waitForTimeout(1200);
+    assert.equal(await guidee.locator('.minuteur-grand').textContent(), fige);
+    await guidee.getByRole('button', { name: '▶ Reprendre' }).click();
+    await guidee.getByRole('button', { name: 'Passer l\'étape' }).click();
+    await guidee.locator('.minuteur-phase', { hasText: 'Récupération' }).waitFor();
+    assert.match(await guidee.locator('.minuteur-grand').textContent(), /^[12]:[0-5]\d$/);
+    for (let k = 0; k < 20 && !(await guidee.getByText('Séance terminée').count()); k++) await guidee.getByRole('button', { name: 'Passer l\'étape' }).click();
+    await guidee.getByText('Séance terminée').waitFor();
+    await guidee.getByRole('button', { name: 'Marquer la séance faite' }).click();
+    await page.locator('.toast', { hasText: 'Séance de soin faite' }).waitFor();
+    await page.locator('.jour-auj .pastille-soin.etat-faite').waitFor();
+    // Séance à 3 exercices (semaine 2) : tempo guidé des montées lentes.
+    await page.getByRole('link', { name: 'Plan', exact: true }).click();
+    await page.locator('.ligne-soin', { hasText: 'Soin · Tendon d\'Achille gauche · 3 exercices' }).first().click();
+    await page.getByRole('button', { name: '▶ Commencer la séance guidée' }).click();
+    await guidee.getByRole('button', { name: '▶ Démarrer' }).click();
+    for (let k = 0; k < 30 && !(await guidee.locator('.minuteur-exercice', { hasText: 'Montées lentes sur pointe' }).count()); k++) {
+      await guidee.getByRole('button', { name: 'Passer l\'étape' }).click();
+    }
+    await guidee.locator('.minuteur-phase', { hasText: /^Monte · [123] s$/ }).waitFor();
+    assert.equal(await guidee.locator('.minuteur-grand').textContent(), '1 / 15');
+    await page.waitForTimeout(3300);
+    await guidee.locator('.minuteur-phase', { hasText: /^Descends/ }).waitFor();
+    await guidee.getByRole('button', { name: 'Je compte moi-même' }).click();
+    await guidee.getByRole('button', { name: '＋1' }).click();
+    assert.equal(await guidee.locator('.minuteur-grand').textContent(), '1 / 15');
+    await capture('23-tempo');
+    await guidee.getByRole('button', { name: 'Arrêter la séance' }).click();
+    await guidee.waitFor({ state: 'detached' }); // retour au détail de la séance
+    await page.locator('.feuille').getByRole('button', { name: 'Fermer' }).click();
+    await page.locator('.feuille').waitFor({ state: 'detached' });
 
     etape('Ajouter une blessure : programme du catalogue depuis l\'onglet Objectifs');
     await page.getByRole('link', { name: 'Objectifs', exact: true }).click();

@@ -43,6 +43,16 @@ const EXEMPLE = {
       id: 'iso_debout', nom: 'Isométrie debout', cible: 'Mollet', frequence: 'Tous les jours', alterne: false, facultatif: false,
       consignes: ['Montez à mi-hauteur sur la pointe du pied et tenez 45 s.'],
       dosage: ['Sur les 2 pieds · 5 × 45 s', 'Jambe {cote} seule · 5 × 45 s'],
+      details: {
+        depart: 'Debout face à un mur, mains posées à plat pour l\'équilibre, genou tendu.',
+        etapes: ['Montez à mi-hauteur sur la pointe des pieds.', 'Tenez immobile pendant la durée indiquée.', 'Redescendez doucement et récupérez.'],
+        respiration: 'Respirez calmement, sans bloquer.',
+        sensation: 'Effort franc du mollet ; douleur du tendon ≤ 3/10.',
+        erreurs: ['Monter trop haut.', 'Plier le genou.'],
+        facile: 'Tenue de 30 s.',
+        difficile: 'Sur une jambe avec un sac lesté.',
+      },
+      seance: { tempo: null, recupS: 120, libelleTenue: 'Tenez' },
     }],
     course: {
       texte: 'Footing facile de 30 min au plus si la douleur reste ≤ 4/10.',
@@ -62,6 +72,9 @@ const REGLES_FORMAT = `Règles du JSON (il sera vérifié automatiquement par l'
 - Dans chaque phase : 1 à 6 exercices réalisables à la maison avec du matériel simple ; au moins un exercice non facultatif dosé dès la semaine 1.
 - Exercice : « id » court en minuscules sans espace ni accent (unique dans la phase) ; « alterne » : true si l'exercice se fait un jour sur deux ; « facultatif » : true s'il est optionnel ;
   « dosage » : une entrée par semaine de la phase (la dernière se répète ensuite), null si l'exercice n'est pas encore introduit cette semaine-là.
+- Écris le dosage sous la forme « séries × répétitions » (« 3 × 15 »), « séries × durée » (« 5 × 45 s », « 3 × 1 min »), « séries × répétitions fois durée » (« 3 × 10 fois 10 s ») ou une durée (« 2 min ») : l'application s'en sert pour guider la séance (minuteur, tempo, compteur). Ajoute « par côté » si l'exercice se fait des deux côtés.
+- Pour chaque exercice, « details » explique précisément comment faire : « depart » (position de départ), « etapes » (2 à 6 étapes), « respiration », « sensation » (ce qu'on doit ressentir, douleur tolérée), « erreurs » (erreurs fréquentes), « facile » et « difficile » (variantes).
+- « seance » règle la séance guidée : « tempo » liste les phases d'une répétition [libellé, secondes] (ex. [["Monte", 3], ["Descends", 3]]), null si l'on compte soi-même (sauts) ; « recupS » : récupération entre deux séries, en secondes ; « libelleTenue » : consigne annoncée pendant une tenue (« Tenez », « Poussez »…).
 - Écris « {cote} » là où il faut nommer le côté atteint (« Jambe {cote} seule ») : l'application le remplace par gauche ou droite.
 - Course : « autorisee » vaut true, false ou "si_douleur_ok" (seulement si la dernière douleur de course des 7 derniers jours est ≤ 4/10) ;
   « intensites » parmi ${D.INTENSITES.map(i => `"${i.id}"`).join(', ')} ; « types » parmi ${D.TYPES_SEANCE.map(t => `"${t.id}"`).join(', ')} ;
@@ -131,6 +144,29 @@ const entier = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const ID = /^[a-z0-9_]{1,40}$/;
 const CHAMPS = CHAMPS_DOULEUR.map(c => c.id);
 
+// Consignes détaillées d'un exercice (toutes facultatives).
+function lireDetails(d) {
+  return {
+    depart: texte(d.depart), etapes: textes(d.etapes, 8), respiration: texte(d.respiration), sensation: texte(d.sensation),
+    erreurs: textes(d.erreurs, 6), facile: texte(d.facile, 200), difficile: texte(d.difficile, 200),
+  };
+}
+
+// Rythme de la séance guidée : tempo (phases [libellé, secondes] ou null), récupération, consigne de tenue.
+function lireSeance(s, ref, erreurs) {
+  if (s === undefined || s === null) return null;
+  if (typeof s !== 'object') { erreurs.push(`${ref} : « seance » doit être un objet.`); return null; }
+  let tempo = null;
+  if (s.tempo !== undefined && s.tempo !== null) {
+    const ok = Array.isArray(s.tempo) && s.tempo.length >= 1 && s.tempo.length <= 4
+      && s.tempo.every(p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && p[0].trim() && entier(p[1], 1, 30));
+    if (!ok) erreurs.push(`${ref} : « seance.tempo » : 1 à 4 phases [libellé, secondes de 1 à 30], ou null.`);
+    else tempo = s.tempo.map(([l, d]) => [l.trim().slice(0, 20), d]);
+  }
+  if (s.recupS !== undefined && !entier(s.recupS, 0, 600)) erreurs.push(`${ref} : « seance.recupS » : entier de 0 à 600 secondes.`);
+  return { tempo, recupS: entier(s.recupS, 0, 600) ? s.recupS : 60, ...(texte(s.libelleTenue, 30) ? { libelleTenue: texte(s.libelleTenue, 30) } : {}) };
+}
+
 // Vérifie un programme (collé depuis l'IA, ou importé d'une sauvegarde). Renvoie { programme, erreurs } :
 // `programme` normalisé (identifiant `perso_…`, source « ia ») si `erreurs` est vide.
 export function validerProgramme(brut, { id = null, maintenant = Date.now() } = {}) {
@@ -170,7 +206,10 @@ export function validerProgramme(brut, { id = null, maintenant = Date.now() } = 
       const dosage = Array.isArray(e.dosage) ? e.dosage.slice(0, 20).map(x => (x === null ? null : texte(x, 120) || null)) : [];
       if (!dosage.some(x => x !== null)) erreurs.push(`${refE} : « dosage » doit contenir au moins une semaine renseignée.`);
       if (typeof e.alterne !== 'boolean') erreurs.push(`${refE} : « alterne » doit valoir true ou false.`);
+      const seance = lireSeance(e.seance, refE, erreurs);
       return {
+        ...(e.details && typeof e.details === 'object' ? { details: lireDetails(e.details) } : {}),
+        ...(seance ? { seance } : {}),
         id: e.id, nom: texte(e.nom, 80), cible: texte(e.cible, 80), frequence: texte(e.frequence, 80) || (e.alterne ? 'Un jour sur deux' : 'Tous les jours'),
         alterne: e.alterne === true, facultatif: e.facultatif === true, consignes, dosage,
       };

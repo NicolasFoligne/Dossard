@@ -870,4 +870,473 @@ const ENTORSE_CHEVILLE = {
   ],
 };
 
-export const PROGRAMMES = [ACHILLE, PERIOSTITE, BANDELETTE, FEMORO_PATELLAIRE, ROTULIEN, APONEVROSITE, ENTORSE_CHEVILLE];
+// ------------------------------------------------------------ Fiches détaillées des exercices
+
+// Une fiche par exercice, partagée entre programmes : consignes détaillées (`details`) et rythme de la séance guidée (`seance`).
+// `seance.tempo` : phases d'une répétition [libellé, secondes] (null = on compte soi-même, ex. sauts) ;
+// `seance.recupS` : récupération entre deux séries ; `seance.libelleTenue` : consigne annoncée pendant une tenue.
+const LENT_3_3 = [['Monte', 3], ['Descends', 3]];
+const FICHES = {
+  iso_mollet: {
+    details: {
+      depart: 'Debout face à un mur, pieds à largeur de hanches, mains posées à plat sur le mur pour l\'équilibre. Genou tendu (sans le verrouiller).',
+      etapes: [
+        'Montez lentement sur la pointe des pieds jusqu\'à mi-hauteur (talons à environ 5 cm du sol).',
+        'Arrêtez-vous et tenez la position, immobile, pendant toute la durée indiquée.',
+        'Redescendez doucement, talons au sol, puis récupérez avant la série suivante.',
+        'Sur une jambe : décollez l\'autre pied du sol et gardez le genou de la jambe d\'appui tendu.',
+      ],
+      respiration: 'Respirez calmement et régulièrement ; ne bloquez pas votre souffle.',
+      sensation: 'Effort franc du mollet (environ 7 sur 10). Douleur du tendon tolérée jusqu\'à 3/10 ; elle diminue souvent pendant l\'exercice.',
+      erreurs: ['Monter trop haut (tenue moins efficace).', 'Laisser la cheville partir vers l\'extérieur.', 'Plier le genou ou se pencher en avant.'],
+      facile: 'Sur les deux pieds, en tenant 30 s au lieu de 45 s.',
+      difficile: 'Sur une jambe avec un sac à dos lesté (5 puis 10 kg).',
+    },
+    seance: { recupS: 120 },
+  },
+  iso_soleaire: {
+    details: {
+      depart: 'Assis sur une chaise, pied à plat, genou plié à angle droit. Posez une charge sur le genou (sac lesté, packs d\'eau).',
+      etapes: [
+        'Soulevez le talon à mi-hauteur en gardant l\'avant du pied au sol.',
+        'Tenez immobile pendant la durée indiquée, en poussant sur l\'avant du pied.',
+        'Reposez lentement le talon et récupérez.',
+      ],
+      respiration: 'Respiration calme et continue.',
+      sensation: 'Travail en profondeur du bas du mollet (soléaire). Douleur ≤ 3/10.',
+      erreurs: ['Soulever la charge avec les bras.', 'Monter le talon au maximum.'],
+      facile: 'Sans charge, ou avec une charge plus légère.',
+      difficile: 'Augmentez la charge de 5 kg d\'une semaine à l\'autre.',
+    },
+    seance: { recupS: 120 },
+  },
+  montees_lentes: {
+    details: {
+      depart: 'Debout, pieds à largeur de hanches, mains en appui léger sur un mur ou une chaise. Genoux tendus sans être verrouillés.',
+      etapes: [
+        'Montez sur la pointe des pieds en 3 secondes, jusqu\'en haut.',
+        'Redescendez en 3 secondes, talons qui touchent juste le sol.',
+        'Enchaînez sans rebond, au rythme donné par l\'application.',
+        '« Plus de poids sur la jambe atteinte » : décalez le poids du corps de son côté, l\'autre pied ne fait qu\'aider.',
+      ],
+      respiration: 'Expirez en montant, inspirez en descendant.',
+      sensation: 'Fatigue du mollet en fin de série. Douleur ≤ 3 à 4/10 et pas d\'aggravation le lendemain.',
+      erreurs: ['Aller trop vite ou rebondir en bas.', 'Rouler sur le bord externe du pied.', 'Plier les genoux pour s\'aider.'],
+      facile: 'Amplitude plus petite, sur les deux pieds.',
+      difficile: 'Sur une jambe, puis sur une marche, talon dans le vide.',
+    },
+    seance: { tempo: LENT_3_3, recupS: 90 },
+  },
+  montees_lourdes: {
+    details: {
+      depart: 'Sur une marche, l\'avant du pied en appui, talon dans le vide, une main sur la rampe. Chargez-vous d\'un sac à dos lesté si indiqué.',
+      etapes: [
+        'Laissez descendre le talon sous le niveau de la marche, sans à-coup.',
+        'Montez sur la pointe en 3 secondes, le plus haut possible.',
+        'Redescendez en 3 secondes jusqu\'en bas de l\'amplitude.',
+        'Choisissez une charge qui rend les dernières répétitions difficiles mais propres.',
+      ],
+      respiration: 'Expirez en montant, inspirez en descendant.',
+      sensation: 'Série vraiment fatigante (dernières répétitions dures). Douleur ≤ 4/10, pas pire le lendemain matin.',
+      erreurs: ['Trop de charge : mouvement saccadé ou incomplet.', 'Genou qui se plie (on travaille moins le mollet).', 'Rebondir en bas de la marche.'],
+      facile: 'Sur le sol plat, ou sans charge.',
+      difficile: 'Ajoutez 2 à 5 kg quand toutes les séries sont faciles.',
+    },
+    seance: { tempo: LENT_3_3, recupS: 150 },
+  },
+  montees_assis_lourdes: {
+    details: {
+      depart: 'Assis, genou plié à angle droit, l\'avant du pied sur une cale (livre, marche), une charge lourde posée sur le genou.',
+      etapes: [
+        'Laissez le talon descendre sous le niveau de la cale.',
+        'Montez le talon en 3 secondes, le plus haut possible.',
+        'Redescendez en 3 secondes.',
+      ],
+      respiration: 'Expirez en montant, inspirez en descendant.',
+      sensation: 'Brûlure en profondeur du bas du mollet en fin de série. Douleur ≤ 4/10.',
+      erreurs: ['Pousser la charge avec les mains.', 'Écourter l\'amplitude.'],
+      facile: 'Charge plus légère, sans cale.',
+      difficile: 'Augmentez la charge par paliers de 5 kg.',
+    },
+    seance: { tempo: LENT_3_3, recupS: 120 },
+  },
+  sautillements: {
+    details: {
+      depart: 'Debout sur un sol amorti (tapis, herbe, piste), pieds à largeur de hanches, genoux légèrement fléchis, regard devant.',
+      etapes: [
+        'Faites de petits rebonds sur l\'avant des pieds, talons qui ne touchent presque pas le sol.',
+        'Gardez des sauts bas (2 à 5 cm), rapides et silencieux.',
+        'Comptez vos rebonds avec le gros bouton de l\'application.',
+        'Sur une jambe : même chose, en tenant un appui si besoin.',
+      ],
+      respiration: 'Respirez librement, sans bloquer.',
+      sensation: 'Effort rapide et léger. Arrêtez la série si la douleur dépasse 3/10.',
+      erreurs: ['Sauter trop haut.', 'Atterrir à plat ou sur les talons.', 'Genoux raides.'],
+      facile: 'Moins de rebonds par série, sur les deux pieds.',
+      difficile: 'Sur une jambe, puis à la corde à sauter.',
+    },
+    seance: { tempo: null, recupS: 90, libelleTenue: 'Sautez' },
+  },
+  releveurs: {
+    details: {
+      depart: 'Assis, jambe tendue devant vous. Fixez un élastique à un pied de table et passez-le sur le dessus de l\'avant du pied.',
+      etapes: [
+        'Tirez la pointe du pied vers vous contre l\'élastique, en 2 secondes.',
+        'Revenez lentement en 2 secondes, sans relâcher d\'un coup.',
+      ],
+      respiration: 'Expirez en tirant, inspirez en revenant.',
+      sensation: 'Fatigue sur le devant du tibia. Pas de douleur vive.',
+      erreurs: ['Bouger tout le genou.', 'Laisser l\'élastique ramener le pied d\'un coup.'],
+      facile: 'Élastique plus souple.',
+      difficile: 'Élastique plus fort ou plus de répétitions.',
+    },
+    seance: { tempo: [['Tire', 2], ['Reviens', 2]], recupS: 60 },
+  },
+  automassage: {
+    details: {
+      depart: 'Assis au sol ou sur une chaise, avec un rouleau, une balle ou une bouteille.',
+      etapes: [
+        'Faites rouler lentement le rouleau ou la balle sur la zone indiquée.',
+        'Insistez quelques secondes sur les zones tendues, sans appuyer sur l\'os ni sur la zone la plus douloureuse.',
+      ],
+      respiration: 'Respirez lentement pour relâcher.',
+      sensation: 'Détente, légère gêne acceptable ; jamais de douleur vive.',
+      erreurs: ['Appuyer fort sur un tendon ou sur l\'os.'],
+      facile: 'Pression plus légère.',
+      difficile: '—',
+    },
+    seance: { recupS: 0, libelleTenue: 'Massez' },
+  },
+  equilibre: {
+    details: {
+      depart: 'Debout sur la jambe atteinte, pieds nus, près d\'un mur ou d\'une chaise pour se rattraper. Genou légèrement fléchi.',
+      etapes: [
+        'Levez l\'autre pied et trouvez votre équilibre, bassin horizontal, regard fixé devant.',
+        'Tenez la durée indiquée en corrigeant les petits déséquilibres avec la cheville.',
+        'Progressez : yeux ouverts, puis yeux fermés, puis sur un coussin.',
+      ],
+      respiration: 'Respiration calme ; relâchez les épaules.',
+      sensation: 'Petits ajustements de la cheville et du pied : c\'est normal et c\'est le but.',
+      erreurs: ['Genou verrouillé.', 'Se tenir en permanence au mur.', 'Bassin qui penche.'],
+      facile: 'Yeux ouverts, un doigt posé sur le mur.',
+      difficile: 'Yeux fermés sur un coussin, ou en lançant une balle.',
+    },
+    seance: { recupS: 30, libelleTenue: 'Tenez l\'équilibre' },
+  },
+  iso_abduction: {
+    details: {
+      depart: 'Debout sur la jambe saine, côté atteint contre un mur, genou atteint légèrement plié et décollé du sol.',
+      etapes: [
+        'Poussez le genou (ou la cuisse) contre le mur, vers l\'extérieur.',
+        'Tenez la poussée sans bouger pendant la durée indiquée.',
+        'Relâchez et récupérez.',
+      ],
+      respiration: 'Respirez normalement pendant la poussée.',
+      sensation: 'Travail sur le côté de la hanche (fessier). Pas de douleur au genou.',
+      erreurs: ['Pencher le buste vers le mur.', 'Pousser trop fort au début.'],
+      facile: 'Poussée plus légère, durée plus courte.',
+      difficile: 'Poussée plus forte, sur une jambe d\'appui légèrement fléchie.',
+    },
+    seance: { recupS: 60, libelleTenue: 'Poussez' },
+  },
+  pont: {
+    details: {
+      depart: 'Allongé sur le dos, genoux pliés, pieds à plat à largeur de hanches, bras le long du corps.',
+      etapes: [
+        'Serrez les fessiers et soulevez le bassin jusqu\'à aligner épaules, hanches et genoux.',
+        'Tenez 2 secondes en haut sans creuser le bas du dos.',
+        'Redescendez lentement, vertèbre par vertèbre.',
+        'Version sur une jambe : tendez l\'autre jambe dans l\'axe de la cuisse.',
+      ],
+      respiration: 'Expirez en montant, inspirez en descendant.',
+      sensation: 'Travail des fessiers et de l\'arrière des cuisses ; pas de douleur dans le dos.',
+      erreurs: ['Pousser avec le bas du dos (dos cambré).', 'Genoux qui s\'écartent ou se rapprochent.'],
+      facile: 'Amplitude plus petite, sur les deux jambes.',
+      difficile: 'Sur une jambe, puis avec une charge sur le bassin.',
+    },
+    seance: { tempo: [['Monte', 2], ['Tenez', 2], ['Descends', 2]], recupS: 60 },
+  },
+  releve_lateral: {
+    details: {
+      depart: 'Couché sur le côté sain, jambe du dessous pliée, tête posée sur le bras, bassin bien de profil.',
+      etapes: [
+        'Montez la jambe du dessus tendue, légèrement en arrière, pointe de pied tournée vers le sol.',
+        'Montez jusqu\'à 30 à 40 cm, sans rouler le bassin vers l\'arrière.',
+        'Redescendez lentement sans poser la jambe.',
+      ],
+      respiration: 'Expirez en montant, inspirez en descendant.',
+      sensation: 'Brûlure sur le côté de la fesse en fin de série.',
+      erreurs: ['Lever la jambe vers l\'avant (on travaille alors la cuisse).', 'Basculer le bassin en arrière.', 'Aller trop vite.'],
+      facile: 'Amplitude plus faible.',
+      difficile: 'Ajoutez un élastique autour des chevilles ou un lest.',
+    },
+    seance: { tempo: [['Monte', 2], ['Descends', 2]], recupS: 60 },
+  },
+  descente_marche: {
+    details: {
+      depart: 'Debout sur une marche (ou un step) sur la jambe atteinte, l\'autre jambe dans le vide, main près d\'un appui.',
+      etapes: [
+        'Pliez lentement le genou d\'appui pour descendre le talon libre vers le sol, en 3 secondes.',
+        'Gardez le genou dans l\'axe du pied et le bassin horizontal.',
+        'Effleurez le sol avec le talon libre, sans prendre appui, puis remontez en 2 secondes.',
+      ],
+      respiration: 'Inspirez en descendant, expirez en remontant.',
+      sensation: 'Travail de la cuisse et de la fesse ; pas de douleur vive au genou.',
+      erreurs: ['Genou qui part vers l\'intérieur.', 'Bassin qui tombe du côté de la jambe libre.', 'Se laisser tomber.'],
+      facile: 'Marche plus basse.',
+      difficile: 'Marche plus haute ou sac à dos lesté.',
+    },
+    seance: { tempo: [['Descends', 3], ['Remonte', 2]], recupS: 90 },
+  },
+  pas_chasses: {
+    details: {
+      depart: 'Élastique autour des chevilles (ou au-dessus des genoux), pieds écartés, genoux légèrement fléchis, buste droit.',
+      etapes: [
+        'Faites un pas sur le côté en gardant l\'élastique tendu.',
+        'Ramenez l\'autre pied à moitié seulement, sans relâcher la tension.',
+        'Faites tous les pas d\'un côté, puis revenez de l\'autre.',
+      ],
+      respiration: 'Respiration libre et régulière.',
+      sensation: 'Chauffe sur le côté des hanches.',
+      erreurs: ['Pieds qui se touchent (élastique relâché).', 'Buste qui se balance.'],
+      facile: 'Élastique plus souple.',
+      difficile: 'Élastique plus fort, genoux plus fléchis.',
+    },
+    seance: { tempo: null, recupS: 45 },
+  },
+  gainage_lateral: {
+    details: {
+      depart: 'Couché sur le côté, en appui sur l\'avant-bras (coude sous l\'épaule), jambes tendues l\'une sur l\'autre.',
+      etapes: [
+        'Soulevez le bassin pour aligner chevilles, hanches et épaules.',
+        'Tenez la position pendant la durée indiquée.',
+        'Changez de côté.',
+      ],
+      respiration: 'Respirez calmement, ne bloquez pas.',
+      sensation: 'Travail du flanc et de la fesse du côté au sol.',
+      erreurs: ['Bassin qui s\'affaisse.', 'Fesses en arrière.'],
+      facile: 'En appui sur les genoux pliés.',
+      difficile: 'Levez la jambe du dessus.',
+    },
+    seance: { recupS: 45, libelleTenue: 'Gainez' },
+  },
+  fentes: {
+    details: {
+      depart: 'Debout, pieds à largeur de hanches, mains sur les hanches.',
+      etapes: [
+        'Faites un grand pas en avant.',
+        'Descendez le genou arrière vers le sol en 2 secondes, genou avant au-dessus de la cheville.',
+        'Remontez en poussant sur le talon avant, puis changez de jambe (ou avancez pour les fentes marchées).',
+      ],
+      respiration: 'Inspirez en descendant, expirez en remontant.',
+      sensation: 'Travail des cuisses et des fessiers ; pas de douleur vive au genou.',
+      erreurs: ['Genou avant qui dépasse largement les orteils ou rentre vers l\'intérieur.', 'Buste penché en avant.'],
+      facile: 'Descente moins profonde.',
+      difficile: 'Avec des haltères ou un sac lesté.',
+    },
+    seance: { tempo: [['Descends', 2], ['Remonte', 2]], recupS: 90 },
+  },
+  chaise: {
+    details: {
+      depart: 'Dos plaqué contre un mur, pieds à environ 50 cm du mur, écartés à largeur de hanches.',
+      etapes: [
+        'Glissez le dos le long du mur jusqu\'à l\'angle de genou indiqué (45° à 60°, pas plus bas au début).',
+        'Tenez immobile pendant la durée indiquée, poids réparti sur les talons.',
+        'Remontez en glissant le long du mur et récupérez.',
+      ],
+      respiration: 'Respirez calmement ; ne bloquez pas.',
+      sensation: 'Effort franc des cuisses (environ 7/10). Douleur du genou ≤ 3/10, souvent soulagée par l\'exercice.',
+      erreurs: ['Descendre trop bas.', 'Genoux qui rentrent vers l\'intérieur.', 'Décoller le dos du mur.'],
+      facile: 'Angle plus petit (moins fléchi), durée plus courte.',
+      difficile: 'Plus de poids sur la jambe atteinte, puis sur une jambe.',
+    },
+    seance: { recupS: 90 },
+  },
+  squat: {
+    details: {
+      depart: 'Debout, pieds à largeur de hanches, pointes légèrement ouvertes ; tenez une charge contre la poitrine si indiqué.',
+      etapes: [
+        'Descendez en reculant les fesses, comme pour vous asseoir, en 3 secondes.',
+        'Arrêtez-vous à la profondeur indiquée (60° à 90° de flexion de genou), genoux dans l\'axe des pieds.',
+        'Remontez au rythme indiqué en poussant sur toute la plante des pieds.',
+      ],
+      respiration: 'Inspirez en descendant, expirez en remontant.',
+      sensation: 'Fatigue des cuisses et des fessiers ; douleur du genou ≤ 4/10.',
+      erreurs: ['Genoux qui rentrent vers l\'intérieur.', 'Talons qui décollent.', 'Dos rond.'],
+      facile: 'Descente moins profonde, sans charge, ou en s\'asseyant sur une chaise.',
+      difficile: 'Ajoutez de la charge par paliers de 2 à 5 kg.',
+    },
+    seance: { tempo: [['Descends', 3], ['Remonte', 2]], recupS: 90 },
+  },
+  montee_marche: {
+    details: {
+      depart: 'Face à une marche (15 à 20 cm), pied de la jambe atteinte posé à plat sur la marche.',
+      etapes: [
+        'Montez en poussant sur le pied posé, sans vous aider de l\'autre jambe.',
+        'Tenez-vous droit en haut, genou dans l\'axe du pied.',
+        'Redescendez lentement en 3 secondes.',
+      ],
+      respiration: 'Expirez en montant, inspirez en descendant.',
+      sensation: 'Travail de la cuisse ; pas de douleur vive.',
+      erreurs: ['Pousser avec le pied resté au sol.', 'Genou qui part vers l\'intérieur.'],
+      facile: 'Marche plus basse.',
+      difficile: 'Marche plus haute ou sac lesté.',
+    },
+    seance: { tempo: [['Monte', 2], ['Descends', 3]], recupS: 90 },
+  },
+  fente_bulgare: {
+    details: {
+      depart: 'Dos à une chaise, posez le dessus du pied arrière sur l\'assise ; pied avant (jambe atteinte) un grand pas devant.',
+      etapes: [
+        'Descendez lentement en 3 secondes en pliant le genou avant, buste droit.',
+        'Arrêtez-vous quand la cuisse avant approche de l\'horizontale.',
+        'Remontez en 3 secondes en poussant sur le talon avant.',
+      ],
+      respiration: 'Inspirez en descendant, expirez en remontant.',
+      sensation: 'Effort important de la cuisse avant et du fessier.',
+      erreurs: ['Genou avant qui rentre vers l\'intérieur.', 'Pied avant trop près de la chaise.'],
+      facile: 'Descente partielle, une main sur un appui.',
+      difficile: 'Avec haltères ou sac lesté.',
+    },
+    seance: { tempo: LENT_3_3, recupS: 120 },
+  },
+  etirement_aponevrose: {
+    details: {
+      depart: 'Assis, pied atteint posé sur le genou opposé.',
+      etapes: [
+        'Attrapez les orteils et tirez-les vers vous jusqu\'à sentir la tension sous le pied.',
+        'Avec l\'autre main, vérifiez que la bande sous le pied est tendue.',
+        'Tenez la durée indiquée, relâchez, puis recommencez.',
+        'Faites-le avant le premier pas du matin.',
+      ],
+      respiration: 'Respirez lentement pendant la tenue.',
+      sensation: 'Étirement net sous la voûte plantaire, sans douleur vive.',
+      erreurs: ['Tirer d\'un coup.', 'Oublier de le faire avant de se lever.'],
+      facile: 'Tension plus légère.',
+      difficile: 'Tenue plus longue.',
+    },
+    seance: { recupS: 30, libelleTenue: 'Étirez' },
+  },
+  montees_serviette: {
+    details: {
+      depart: 'Sur une marche, une serviette roulée sous les orteils du pied atteint (orteils relevés), talon dans le vide, main sur la rampe.',
+      etapes: [
+        'Montez sur la pointe en 3 secondes, orteils toujours relevés sur la serviette.',
+        'Tenez 2 secondes en haut.',
+        'Redescendez en 3 secondes, talon sous le niveau de la marche.',
+      ],
+      respiration: 'Expirez en montant, inspirez en descendant.',
+      sensation: 'Tension sous le pied et fatigue du mollet ; douleur ≤ 4/10.',
+      erreurs: ['Serviette qui glisse.', 'Mouvement rapide ou incomplet.'],
+      facile: 'Sans charge, au sol.',
+      difficile: 'Sac à dos lesté.',
+    },
+    seance: { tempo: [['Monte', 3], ['Tenez', 2], ['Descends', 3]], recupS: 120 },
+  },
+  pied_court: {
+    details: {
+      depart: 'Assis, pieds à plat au sol (puis debout quand c\'est facile).',
+      etapes: [
+        'Rapprochez l\'avant du pied du talon en creusant la voûte, sans plier les orteils.',
+        'Tenez la contraction pendant la durée indiquée, puis relâchez.',
+        'Ensuite, ramassez une serviette posée au sol avec les orteils, plusieurs fois.',
+      ],
+      respiration: 'Respiration calme.',
+      sensation: 'Petite crampe sous le pied : c\'est le muscle qui travaille.',
+      erreurs: ['Recroqueviller les orteils.', 'Soulever le talon.'],
+      facile: 'Assis, tenue plus courte.',
+      difficile: 'Debout sur une jambe.',
+    },
+    seance: { recupS: 30, libelleTenue: 'Creusez la voûte' },
+  },
+  alphabet: {
+    details: {
+      depart: 'Assis ou allongé, jambe atteinte surélevée sur un coussin.',
+      etapes: [
+        'Avec la pointe du pied, « écrivez » les lettres de l\'alphabet en majuscules, lentement.',
+        'Faites des mouvements amples mais sans forcer.',
+      ],
+      respiration: 'Respiration calme.',
+      sensation: 'Raideur qui diminue ; légère gêne acceptable.',
+      erreurs: ['Bouger tout le genou au lieu de la cheville.', 'Forcer dans la douleur.'],
+      facile: 'Lettres plus petites.',
+      difficile: '—',
+    },
+    seance: { recupS: 0 },
+  },
+  iso_eversion: {
+    details: {
+      depart: 'Assis, genou plié, bord externe du pied atteint contre un pied de table ou un mur.',
+      etapes: [
+        'Poussez le bord externe du pied vers l\'extérieur, contre l\'obstacle, sans bouger.',
+        'Tenez la poussée pendant la durée indiquée, puis relâchez.',
+      ],
+      respiration: 'Respirez normalement pendant la poussée.',
+      sensation: 'Contraction sur le côté externe de la jambe ; pas de douleur vive.',
+      erreurs: ['Tourner tout le genou.', 'Pousser trop fort au début.'],
+      facile: 'Poussée légère.',
+      difficile: 'Poussée plus forte.',
+    },
+    seance: { recupS: 10, libelleTenue: 'Poussez' },
+  },
+  eversion_elastique: {
+    details: {
+      depart: 'Assis, jambe tendue, élastique autour de l\'avant du pied atteint, fixé de l\'autre côté (vers l\'intérieur).',
+      etapes: [
+        'Tournez la plante du pied vers l\'extérieur contre l\'élastique, en 2 secondes.',
+        'Revenez lentement en 2 secondes.',
+      ],
+      respiration: 'Expirez en tirant, inspirez en revenant.',
+      sensation: 'Fatigue sur le côté externe de la jambe.',
+      erreurs: ['Bouger le genou ou la hanche.', 'Relâcher d\'un coup.'],
+      facile: 'Élastique plus souple.',
+      difficile: 'Élastique plus fort.',
+    },
+    seance: { tempo: [['Tire', 2], ['Reviens', 2]], recupS: 60 },
+  },
+  glace: {
+    details: {
+      depart: 'Allongé, jambe surélevée sur des coussins (cheville plus haute que le genou).',
+      etapes: [
+        'Posez une poche de glace enveloppée dans un linge sur la zone gonflée.',
+        'Laissez en place la durée indiquée, sans contact direct avec la peau.',
+      ],
+      respiration: '—',
+      sensation: 'Froid supportable ; retirez si la peau brûle ou devient blanche.',
+      erreurs: ['Glace directement sur la peau.', 'Plus de 20 minutes d\'affilée.'],
+      facile: '—',
+      difficile: '—',
+    },
+    seance: { recupS: 0, libelleTenue: 'Glace' },
+  },
+};
+
+// Fiche de chaque exercice, par programme. Une valeur [fiche, seance] remplace le rythme de la fiche.
+const FICHES_PAR_PROGRAMME = {
+  achille_corps: { iso_debout: 'iso_mollet', iso_assis: 'iso_soleaire', montees_lentes: 'montees_lentes', montees_debout: 'montees_lourdes', montees_assis: 'montees_assis_lourdes', sautillements: 'sautillements' },
+  periostite: { montees_2_pieds: 'montees_lentes', releveurs: 'releveurs', massage: 'automassage', montees_unipodales: 'montees_lourdes', soleaire: 'montees_assis_lourdes', equilibre: 'equilibre', sautillements: 'sautillements', montees_entretien: 'montees_lourdes' },
+  bandelette: { iso_abduction: 'iso_abduction', pont_fessier: 'pont', releve_lateral: 'releve_lateral', descente_marche: 'descente_marche', pont_unipodal: 'pont', marche_laterale: 'pas_chasses', gainage_lateral: 'gainage_lateral', fentes: 'fentes', descente_lestee: 'descente_marche' },
+  femoro_patellaire: { chaise: 'chaise', pont_fessier: 'pont', releve_lateral: 'releve_lateral', squat_partiel: 'squat', montee_marche: 'montee_marche', marche_laterale: 'pas_chasses', fentes: 'fentes', sautillements: 'sautillements' },
+  tendon_rotulien: { chaise: ['chaise', { recupS: 120 }], pont_fessier: 'pont', squat_lent: ['squat', { tempo: LENT_3_3, recupS: 150 }], fente_bulgare: 'fente_bulgare', sautillements: 'sautillements', squat_entretien: ['squat', { tempo: LENT_3_3, recupS: 150 }] },
+  aponevrosite: { etirement_aponevrose: 'etirement_aponevrose', montees_lentes: 'montees_lentes', massage_balle: 'automassage', montees_serviette: 'montees_serviette', pied_court: 'pied_court', soleaire: 'montees_assis_lourdes', sautillements: 'sautillements', montees_entretien: 'montees_serviette' },
+  entorse_cheville: { alphabet: 'alphabet', iso_eversion: 'iso_eversion', glace: 'glace', equilibre: 'equilibre', eversion_elastique: 'eversion_elastique', montees_pointe: 'montees_lentes', sautillements: 'sautillements' },
+};
+
+function avecFiches(programme) {
+  const table = FICHES_PAR_PROGRAMME[programme.id] ?? {};
+  return {
+    ...programme,
+    phases: programme.phases.map(ph => ({
+      ...ph,
+      exercices: ph.exercices.map(e => {
+        const ref = table[e.id];
+        if (!ref) return e;
+        const [cle, seance] = Array.isArray(ref) ? ref : [ref, null];
+        const fiche = FICHES[cle];
+        return { ...e, details: fiche.details, seance: { ...fiche.seance, ...seance } };
+      }),
+    })),
+  };
+}
+
+export const PROGRAMMES = [ACHILLE, PERIOSTITE, BANDELETTE, FEMORO_PATELLAIRE, ROTULIEN, APONEVROSITE, ENTORSE_CHEVILLE].map(avecFiches);
