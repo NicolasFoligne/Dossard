@@ -798,3 +798,36 @@ details.test-montees .formulaire { padding-bottom: 10px; }
 .actions-objectifs .bouton { padding-left: 10px; padding-right: 10px; }
 .ligne-programme { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--bordure); }
 .carte h2 + p + .ligne-programme { border-top: 0; }
+
+/* ---------------------------------------------------------------- Fiches d'exercice et séance guidée */
+
+details.fiche { margin-top: 4px; }
+details.fiche > summary { min-height: 40px; font-size: 0.92rem; color: var(--soin); }
+.fiche-corps { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 8px 4px; font-size: 0.93rem; }
+.fiche-corps h4 { margin: 8px 0 0; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--texte-2); }
+.fiche-corps ol, .fiche-corps ul, .fiche-consignes { margin: 2px 0; padding-left: 22px; }
+.fiche-corps li + li, .fiche-consignes li + li { margin-top: 3px; }
+/* Les fiches sont dans une liste sans puces (.soin-exercices) : on rétablit numéros et puces. */
+.fiche-corps li, .fiche-consignes li { display: list-item; }
+.fiche-corps ol { list-style: decimal; }
+.fiche-corps ul, .fiche-consignes { list-style: disc; }
+.soin-exercices li > span:last-child { min-width: 0; flex: 1; }
+
+.seance-guidee { display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.seance-guidee .soin-exercices { text-align: left; }
+.seance-guidee .interrupteur { text-align: left; }
+.minuteur-exercice { font-size: 1.3rem; color: var(--soin); }
+.minuteur-dosage { color: var(--texte-2); }
+.minuteur-serie { font-weight: 700; font-size: 1.05rem; }
+.minuteur-cadran {
+  background: var(--soin-doux); border-radius: 20px; padding: 20px 16px 16px;
+  display: flex; flex-direction: column; gap: 8px; align-items: stretch;
+}
+.minuteur-cadran.minuteur-recup, .minuteur-cadran.minuteur-transition { background: var(--surface-2); }
+.minuteur-grand { font-size: clamp(3.5rem, 22vw, 6rem); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--soin); }
+.minuteur-recup .minuteur-grand, .minuteur-transition .minuteur-grand { color: var(--texte); }
+.minuteur-phase { font-size: 1.4rem; font-weight: 700; min-height: 1.6em; }
+.minuteur-cadran .barre span { background: var(--soin); }
+.minuteur-plus { min-height: 96px; font-size: 2rem; }
+.minuteur-commandes { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr; gap: 8px; }
+.minuteur-fin { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 24px 0; }
