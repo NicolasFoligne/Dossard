@@ -28,7 +28,7 @@ const notifier = () => abonnes.forEach(f => f());
 export async function charger() {
   const d = await db.lireTout();
   etat.profil = { ...D.profilParDefaut(), ...d.profil, materiel: { ...D.profilParDefaut().materiel, ...d.profil?.materiel } };
-  etat.semainier = d.semainier ?? D.semainierParDefaut();
+  etat.semainier = D.normaliserSemainier(d.semainier); // ancienne « durée maximale » → un créneau
   etat.reglages = { ...D.reglagesParDefaut(), ...d.reglages };
   etat.plan = d.plan ?? null;
   etat.objectifs = d.objectifs;
@@ -70,7 +70,8 @@ export async function enregistrerProfil(profil) {
   notifier();
 }
 
-export async function enregistrerSemainier(semainier) {
+export async function enregistrerSemainier(donnees) {
+  const semainier = D.normaliserSemainier(donnees);
   await db.ecrireKv('semainier', semainier);
   etat.semainier = semainier;
   notifier();
@@ -308,7 +309,7 @@ export async function exporter() {
 export async function importer(donnees) {
   await db.remplacerTout(donnees);
   etat.profil = donnees.profil;
-  etat.semainier = donnees.semainier;
+  etat.semainier = D.normaliserSemainier(donnees.semainier);
   etat.reglages = donnees.reglages;
   etat.plan = donnees.plan;
   etat.objectifs = donnees.objectifs;

@@ -115,8 +115,25 @@ export function allureMinSec(secParUnite) {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
 
+// Disciplines dont la distance se saisit et s'affiche en mètres (stockée en km comme les autres).
+export const DISCIPLINES_EN_METRES = new Set(['natation', 'rameur']);
+
 export function distance(km, discipline) {
   if (!km && km !== 0) return '';
-  if (discipline === 'natation') return `${Math.round(km * 1000)} m`;
+  if (DISCIPLINES_EN_METRES.has(discipline)) return `${Math.round(km * 1000)} m`;
   return `${nombre(km, km < 10 ? 2 : 1)} km`;
+}
+
+// Heures : minutes depuis minuit ↔ « 18:30 » (stockage, IA) ; affichage français « 18 h 30 », « 6 h ».
+export const minutesVersHeure = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+export function heureVersMinutes(texte) {
+  const r = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(texte ?? '');
+  return r ? Number(r[1]) * 60 + Number(r[2]) : null;
+}
+export function heureFr(m) {
+  if (typeof m === 'string') m = heureVersMinutes(m);
+  if (m === null || m === undefined) return '';
+  const h = Math.floor(m / 60);
+  const mn = m % 60;
+  return mn ? `${h} h ${String(mn).padStart(2, '0')}` : `${h} h`;
 }

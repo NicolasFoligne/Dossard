@@ -103,11 +103,15 @@ export function champ(libelle, controle, aide = null) {
 }
 
 export function texte(nom, valeur = '', attrs = {}) {
-  return h('input', { type: 'text', name: nom, value: valeur ?? '', autocomplete: 'off', ...attrs });
+  return h('input', { type: 'text', name: nom, value: valeur ?? '', autocomplete: 'off', 'data-1p-ignore': true, 'data-lpignore': 'true', 'data-form-type': 'other', ...attrs });
 }
 
+// Zone de texte libre : ni autoremplissage du navigateur (adresse e-mail, contacts…), ni gestionnaire de mots de passe.
 export function zoneTexte(nom, valeur = '', attrs = {}) {
-  return h('textarea', { name: nom, rows: 3, ...attrs }, valeur ?? '');
+  return h('textarea', {
+    name: nom, rows: 3, autocomplete: 'off', autocapitalize: 'sentences', spellcheck: true,
+    'data-1p-ignore': true, 'data-lpignore': 'true', 'data-bwignore': true, 'data-form-type': 'other', ...attrs,
+  }, valeur ?? '');
 }
 
 export function nombre(nom, valeur, attrs = {}) {

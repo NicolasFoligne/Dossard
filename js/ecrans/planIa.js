@@ -22,7 +22,8 @@ export function ouvrirPlanIa({ auto = false } = {}) {
   const auj = F.aujourdhui();
   let contexte;
   try {
-    contexte = IA.construireContexte(M.etat, auj);
+    const maintenant = new Date();
+    contexte = IA.construireContexte(M.etat, auj, { minutesActuelles: maintenant.getHours() * 60 + maintenant.getMinutes() });
   } catch (e) {
     U.toast(e.message, { erreur: true });
     return;

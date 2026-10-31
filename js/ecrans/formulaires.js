@@ -17,15 +17,22 @@ function choixUnique(nom, options, valeur, onchange) {
 
 const zoneErreur = () => h('p.erreur', { role: 'alert' });
 
-// Distance saisie en mètres pour la natation, en km sinon. Stockée en km.
+// Distance saisie en mètres (natation, rameur) ou en km selon la discipline. Stockée en km.
+const enMetres = disc => D.discipline(disc).distance === 'm';
 function lireDistance(form, disc) {
   const n = U.valeurNombre(form, 'distance');
   if (n === null) return null;
-  return disc === 'natation' ? n / 1000 : n;
+  return enMetres(disc) ? n / 1000 : n;
 }
 function valeurDistance(km, disc) {
   if (!km) return '';
-  return disc === 'natation' ? Math.round(km * 1000) : km;
+  return enMetres(disc) ? Math.round(km * 1000) : km;
+}
+// Champ distance adapté à la discipline (aucun pour le renforcement et la mobilité).
+function champDistance(disc, km, attrs = {}) {
+  if (D.discipline(disc).distance === null) return null;
+  return U.champ(enMetres(disc) ? 'Distance (m)' : 'Distance (km)',
+    U.nombre('distance', valeurDistance(km, disc), { placeholder: enMetres(disc) ? 'ex. 1500' : 'ex. 10,5', ...attrs }));
 }
 
 function nomsObjectifs(ids) {
@@ -44,7 +51,7 @@ export function ouvrirSaisieRealisee({ id = null, brouillon = null } = {}) {
 
   U.ouvrirFeuille(existante ? 'Modifier la séance' : 'Séance réalisée', fermer => {
     const erreur = zoneErreur();
-    const form = h('form.formulaire', { novalidate: true });
+    const form = h('form.formulaire', { novalidate: true, autocomplete: 'off' });
     const infoAllure = h('p.calcul', { 'aria-live': 'polite' });
     const infoRattachement = h('p.aide-rattachement');
     const zoneDistance = h('div.zone');
@@ -52,16 +59,13 @@ export function ouvrirSaisieRealisee({ id = null, brouillon = null } = {}) {
     const disc = () => form.querySelector('[name="discipline"]:checked')?.value ?? 'course';
 
     const dessinerDistance = (km) => {
-      const d = disc();
-      if (d === 'renforcement') { U.vider(zoneDistance); return; }
-      U.vider(zoneDistance, U.champ(d === 'natation' ? 'Distance (m)' : 'Distance (km)',
-        U.nombre('distance', valeurDistance(km, d), { oninput: majCalculs, placeholder: d === 'natation' ? 'ex. 1500' : 'ex. 10,5' })));
+      U.vider(zoneDistance, champDistance(disc(), km, { oninput: majCalculs }));
     };
 
     const majCalculs = () => {
       const d = disc();
       const a = D.allure({ discipline: d, dureeS: U.lireDuree(form, 'duree'), distanceKm: lireDistance(form, d) });
-      infoAllure.textContent = a ? `${d === 'course' || d === 'natation' ? 'Allure' : 'Vitesse'} : ${a.texte}` : '';
+      infoAllure.textContent = a ? `${D.estVitesse(a) ? 'Vitesse' : 'Allure'} : ${a.texte}` : '';
       const noms = nomsObjectifs(D.objectifsRattachables(d, M.etat.objectifs));
       infoRattachement.textContent = noms.length
         ? `Rattachée automatiquement à : ${noms.join(', ')}`
@@ -124,7 +128,7 @@ export function ouvrirSaisieRealisee({ id = null, brouillon = null } = {}) {
           date: U.valeur(form, 'date'),
           discipline: d,
           dureeS: U.lireDuree(form, 'duree'),
-          distanceKm: d === 'renforcement' ? null : lireDistance(form, d),
+          distanceKm: D.discipline(d).distance === null ? null : lireDistance(form, d),
           ressenti: U.lireRessenti(form, 'ressenti'),
           notes: U.valeur(form, 'notes'),
           prevueId: prevueLiee(),
@@ -138,7 +142,9 @@ export function ouvrirSaisieRealisee({ id = null, brouillon = null } = {}) {
 }
 
 export function libellePrevue(p) {
-  const parties = [D.discipline(p.discipline).icone, D.TYPES_SEANCE.find(t => t.id === p.type)?.libelle ?? p.type];
+  const parties = [D.discipline(p.discipline).icone];
+  if (p.heureDebut) parties.push(F.heureFr(p.heureDebut));
+  parties.push(D.TYPES_SEANCE.find(t => t.id === p.type)?.libelle ?? p.type);
   if (p.dureeS) parties.push(F.duree(p.dureeS));
   if (p.distanceKm) parties.push(F.distance(p.distanceKm, p.discipline));
   return parties.join(' · ');
@@ -156,16 +162,14 @@ export function ouvrirPrevue({ id = null, date = null } = {}) {
 
   U.ouvrirFeuille(existante ? 'Modifier la séance prévue' : 'Nouvelle séance prévue', fermer => {
     const erreur = zoneErreur();
-    const form = h('form.formulaire', { novalidate: true });
+    const form = h('form.formulaire', { novalidate: true, autocomplete: 'off' });
     const zoneDistance = h('div.zone');
     const zoneObjectifs = h('div.zone');
     const disc = () => form.querySelector('[name="discipline"]:checked')?.value ?? 'course';
     let objectifsTouches = !!existante;
 
     const dessinerDistance = km => {
-      const d = disc();
-      U.vider(zoneDistance, d === 'renforcement' ? null
-        : U.champ(d === 'natation' ? 'Distance (m)' : 'Distance (km)', U.nombre('distance', valeurDistance(km, d))));
+      U.vider(zoneDistance, champDistance(disc(), km));
     };
     const dessinerObjectifs = () => {
       if (!objectifsOuverts.length) {
@@ -187,6 +191,7 @@ export function ouvrirPrevue({ id = null, date = null } = {}) {
       h('div.grille-2',
         U.champ('Type', U.selection('type', D.TYPES_SEANCE, depart.type)),
         U.champ('Intensité', U.selection('intensite', D.INTENSITES, depart.intensite))),
+      U.champ('Heure de début (facultative)', h('input', { type: 'time', name: 'heureDebut', value: depart.heureDebut ?? '', step: 900 })),
       U.champ('Durée', U.duree('duree', depart.dureeS, { avecSecondes: false })),
       zoneDistance,
       U.champ('Échauffement', U.zoneTexte('echauffement', depart.description?.echauffement, { rows: 2 })),
@@ -221,7 +226,8 @@ export function ouvrirPrevue({ id = null, date = null } = {}) {
           type: U.valeur(form, 'type'),
           intensite: U.valeur(form, 'intensite'),
           dureeS: U.lireDuree(form, 'duree'),
-          distanceKm: d === 'renforcement' ? null : lireDistance(form, d),
+          heureDebut: U.valeur(form, 'heureDebut') || null,
+          distanceKm: D.discipline(d).distance === null ? null : lireDistance(form, d),
           description: { echauffement: U.valeur(form, 'echauffement'), corps: U.valeur(form, 'corps'), retourCalme: U.valeur(form, 'retourCalme') },
           objectifIds: puce ? U.lirePuces(puce) : [],
           etat: existante ? U.valeur(form, 'etat') : 'a_faire',
@@ -272,7 +278,7 @@ export function ouvrirObjectif({ id = null } = {}) {
 
   U.ouvrirFeuille(existant ? 'Modifier l\'objectif' : 'Nouvel objectif', fermer => {
     const erreur = zoneErreur();
-    const form = h('form.formulaire', { novalidate: true });
+    const form = h('form.formulaire', { novalidate: true, autocomplete: 'off' });
     const zoneType = h('div.zone');
     const zoneDistances = h('div.zone');
     const sport = () => form.querySelector('[name="sport"]:checked')?.value ?? 'course';
@@ -356,7 +362,7 @@ export function ouvrirResultat(id) {
   const o = M.objectif(id);
   U.ouvrirFeuille('Terminer l\'objectif', fermer => {
     const erreur = zoneErreur();
-    const form = h('form.formulaire', { novalidate: true },
+    const form = h('form.formulaire', { novalidate: true, autocomplete: 'off' },
       h('p.aide', `Saisissez votre résultat pour « ${o.nom} ». L'objectif passera au statut « Terminé ».`),
       U.champ('Temps réalisé', U.duree('temps', null)),
       U.champ('Classement (facultatif)', U.texte('classement', '', { placeholder: 'ex. 152e / 1 800' })),

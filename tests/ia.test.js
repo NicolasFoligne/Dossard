@@ -40,8 +40,8 @@ function planValide(contexte) {
   for (const s of contexte.calendrier) {
     for (const j of s.jours.slice(0, s.plafondRestant ?? 7)) {
       seances.push({
-        date: j.date, discipline: j.disciplines[0], type: 'endurance', intensite: 'facile',
-        dureeMin: Math.min(45, j.dureeMaxMin ?? 45), distanceKm: j.disciplines[0] === 'renforcement' ? null : 8,
+        date: j.date, heureDebut: j.creneaux[0].debut, discipline: j.disciplines[0], type: 'endurance', intensite: 'facile',
+        dureeMin: Math.min(45, j.dureeMaxMin), distanceKm: j.disciplines[0] === 'renforcement' ? null : 8,
         echauffement: '10 min', corps: 'Footing', retourCalme: '5 min', objectifIds: [],
       });
     }
@@ -115,7 +115,7 @@ test('aperçu : points d\'attention sur la progression et l\'intensité', () => 
 
 test('validation : respect strict du semainier et du plafond', () => {
   const c = IA.construireContexte(etatDeTest(), AUJ);
-  const base = { type: 'endurance', intensite: 'facile', distanceKm: null, echauffement: '', corps: '', retourCalme: '', objectifIds: [] };
+  const base = { heureDebut: '18:00', type: 'endurance', intensite: 'facile', distanceKm: null, echauffement: '', corps: '', retourCalme: '', objectifIds: [] };
   const verifier = (seances, motif) => {
     const { plan, erreurs } = IA.validerPlan({ analyse: '', phases: [], seances }, c);
     assert.equal(plan, null);
@@ -144,7 +144,7 @@ test('validation : rattachement limité aux objectifs compatibles', () => {
   const c = IA.construireContexte(e, AUJ);
   const { plan } = IA.validerPlan({
     analyse: '', phases: [],
-    seances: [{ date: '2026-10-31', discipline: 'velo', type: 'endurance', intensite: 'facile', dureeMin: 90, distanceKm: 40, echauffement: '', corps: '', retourCalme: '', objectifIds: [e.ids.semi, 'inconnu'] }],
+    seances: [{ date: '2026-10-31', heureDebut: '18:00', discipline: 'velo', type: 'endurance', intensite: 'facile', dureeMin: 90, distanceKm: 40, echauffement: '', corps: '', retourCalme: '', objectifIds: [e.ids.semi, 'inconnu'] }],
   }, c);
   assert.deepEqual(plan.seances[0].objectifIds, [e.ids.tri]); // le vélo ne sert pas le semi
 });
@@ -283,4 +283,58 @@ test('API : erreurs HTTP (clé refusée, options non acceptées, surcharge)', as
   const reseau = fausseApi([() => { throw new TypeError('Failed to fetch'); }, () => { throw new TypeError('Failed to fetch'); }]);
   await assert.rejects(genererPlan({ cle: 'k', modele: 'm', contexte: c, fetchImpl: reseau.fetchImpl }), /Connexion impossible/);
   assert.equal(reseau.appels[1].init.headers['anthropic-beta'], undefined);
+});
+
+// ------------------------------------------------------------ Créneaux horaires (v1.4.0)
+
+function etatCreneaux() {
+  const e = etatDeTest();
+  e.semainier = D.normaliserSemainier(e.semainier);
+  // Samedi : matin et soir.
+  e.semainier.jours[5] = { disponible: true, creneaux: [{ debut: 390, fin: 480 }, { debut: 1080, fin: 1170 }], disciplines: ['velo', 'course'] };
+  e.semainier = D.normaliserSemainier(e.semainier);
+  return e;
+}
+
+test('créneaux : envoyés à l\'IA, coupés par l\'heure actuelle et par les séances conservées qui ont une heure', () => {
+  const e = etatCreneaux();
+  e.prevues.push(D.creerPrevue({ date: '2026-11-07', heureDebut: '18:00', discipline: 'course', dureeS: 1800, source: 'manuel' })); // samedi suivant
+  const c = IA.construireContexte(e, AUJ);
+  const samedi = c.calendrier[0].jours.find(j => j.date === '2026-10-31');
+  assert.deepEqual(samedi.creneaux, [{ debut: '06:30', fin: '08:00' }, { debut: '18:00', fin: '19:30' }]);
+  assert.equal(samedi.dureeMaxMin, 180);
+  assert.deepEqual(c.semainier[5].creneaux, ['06:30-08:00', '18:00-19:30']);
+  const samediSuivant = c.calendrier[1].jours.find(j => j.date === '2026-11-07');
+  assert.deepEqual(samediSuivant.creneaux, [{ debut: '06:30', fin: '08:00' }, { debut: '18:30', fin: '19:30' }]);
+  assert.equal(c.seancesConservees.find(x => x.date === '2026-11-07').heureDebut, '18:00');
+
+  // Génération le jour même à 17 h 10 : seuls les créneaux à venir de la journée restent (à partir de 17 h 15).
+  const mercredi = { ...e, semainier: { ...e.semainier, jours: e.semainier.jours.map((j, i) => (i === 2 ? { disponible: true, creneaux: [{ debut: 420, fin: 480 }, { debut: 1020, fin: 1140 }], disciplines: ['course'] } : j)) } };
+  const tard = IA.construireContexte(mercredi, AUJ, { minutesActuelles: 17 * 60 + 10 });
+  assert.deepEqual(tard.calendrier[0].jours.find(j => j.date === AUJ).creneaux, [{ debut: '17:15', fin: '19:00' }]);
+  const nuit = IA.construireContexte(mercredi, AUJ, { minutesActuelles: 22 * 60 });
+  assert.equal(nuit.calendrier[0].jours.find(j => j.date === AUJ), undefined);
+});
+
+test('créneaux : chaque séance doit avoir une heure, tenir dans un créneau, sans chevauchement', () => {
+  const c = IA.construireContexte(etatCreneaux(), AUJ);
+  // Samedi de la semaine suivante (plafond restant : 3 séances).
+  const s = (o = {}) => ({ date: '2026-11-07', heureDebut: '06:30', discipline: 'velo', type: 'endurance', intensite: 'facile', dureeMin: 60, distanceKm: 25, echauffement: '', corps: '', retourCalme: '', objectifIds: [], ...o });
+  const valider = seances => IA.validerPlan({ analyse: '', phases: [], seances }, c);
+  assert.deepEqual(valider([s(), s({ heureDebut: '18:00', discipline: 'course', dureeMin: 45, distanceKm: 8 })]).erreurs, []);
+  assert.equal(valider([s()]).plan.seances[0].heureDebut, '06:30');
+  assert.match(valider([s({ heureDebut: '07:30' })]).erreurs[0], /07:30 \+ 60 min ne tient dans aucun créneau du samedi 2026-11-07 \(créneaux : 06:30-08:00, 18:00-19:30\)/);
+  assert.match(valider([s({ heureDebut: '12:00' })]).erreurs[0], /ne tient dans aucun créneau/);
+  assert.match(valider([s({ heureDebut: '6h30' })]).erreurs[0], /HH:MM/);
+  assert.match(valider([s({ heureDebut: undefined })]).erreurs[0], /HH:MM/);
+  const chevauchement = valider([s({ dureeMin: 60 }), s({ heureDebut: '07:00', dureeMin: 45, discipline: 'course' })]).erreurs;
+  assert.ok(chevauchement.some(x => /se chevauchent/.test(x)), chevauchement.join(' | '));
+  // Mobilité : pas de distance conservée.
+  const e = etatCreneaux();
+  e.semainier.jours[5].disciplines.push('mobilite');
+  const c2 = IA.construireContexte(e, AUJ);
+  const r = IA.validerPlan({ analyse: '', phases: [], seances: [s({ discipline: 'mobilite', dureeMin: 30, distanceKm: 3 })] }, c2);
+  assert.equal(r.plan.seances[0].distanceKm, null);
+  assert.equal(IA.SCHEMA_PLAN.properties.seances.items.required.includes('heureDebut'), true);
+  assert.ok(IA.SCHEMA_PLAN.properties.seances.items.properties.discipline.enum.includes('rameur'));
 });
