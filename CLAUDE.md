@@ -149,7 +149,7 @@ _(Section tenue à jour au fil des sessions.)_
 - **Sauvegarde** : format 3 (format 2 : ajout de `blessures` et `bilans` ; format 3 : `seancesSoin`) ; les sauvegardes
   aux formats 1 et 2 restent importables (listes absentes = vides, puis le planning de soin est régénéré).
 
-### Séances de soin dans le planning (lot 3, version 1.3.0)
+### Séances de soin dans le planning (lot 3, versions 1.3.0 et 1.3.1)
 
 - **Stockage** : magasin IndexedDB dédié `seancesSoin` (et non `prevues` avec `source: 'soin'`). Les séances de soin sont ainsi
   invisibles par construction pour le plan IA (calendrier, durées, plafond restant, séances conservées), les volumes hebdomadaires,
@@ -159,8 +159,11 @@ _(Section tenue à jour au fil des sessions.)_
   (`exercicesObligatoires` de `js/soin.js`). Pas de séance les jours sans exercice obligatoire (phases 2 et 3 : un jour sur deux) ;
   l'isométrie facultative de la phase 2 n'en fait pas partie. Les séances sont obligatoires : elles ne dépendent pas du semainier
   et ne comptent pas dans le plafond.
-- **Génération** (`reconcilierSoin`) : d'aujourd'hui à la fin prévue de la phase en cours (durée maximale, au moins 7 jours),
-  à l'ouverture de l'application et après chaque création, modification, changement de phase, retour en arrière, fin de suivi et import.
+- **Génération** (`reconcilierSoin`) : d'aujourd'hui à la **fin du programme** (v1.3.1 ; en 1.3.0, seulement la phase en cours) :
+  la phase en cours puis les phases suivantes, enchaînées à leur **durée maximale** — même projection que pour le plan IA
+  (`projectionPhases` ; la phase en cours dure au moins 7 jours à partir d'aujourd'hui). Dans une phase projetée, dosage et alternance
+  partent de son début projeté. Génération à l'ouverture de l'application et après chaque création, modification, changement de phase,
+  retour en arrière, fin de suivi et import : un vrai changement de phase recale donc les phases suivantes.
   Seules les séances futures (aujourd'hui compris) « à faire » sont créées, mises à jour ou supprimées ; les séances passées,
   faites ou ratées sont conservées. Supprimer un suivi supprime toutes ses séances.
 - **Lien avec le bilan du jour, dans les deux sens** : passer la séance à « Faite » coche ses exercices dans le bilan du jour
