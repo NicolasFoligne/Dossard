@@ -304,13 +304,16 @@ async function main() {
       const seance = M.etat.seancesSoin.find(x => x.date === auj);
       const bilan = M.etat.bilans.find(b => b.date === auj);
       return { nb: M.etat.seancesSoin.length, etat: seance?.etat, phase: seance?.phase, exercices: seance?.exercices.map(e => e.id), bilan: bilan?.exercices ?? null,
-        futures: M.etat.seancesSoin.filter(x => x.date > auj).map(x => ({ etat: x.etat, phase: x.phase })) };
+        futures: M.etat.seancesSoin.filter(x => x.date > auj).sort((a, b) => a.date.localeCompare(b.date)).map(x => ({ etat: x.etat, phase: x.phase })) };
     });
     // Le bilan du jour cochait déjà tous les exercices de la séance (isométrie debout en semaine 1) : séance « faite ».
     let soin = await etatSoin();
     assert.equal(soin.etat, 'faite');
     assert.deepEqual(soin.exercices, ['iso_debout']);
-    assert.ok(soin.futures.length >= 20 && soin.futures.every(x => x.etat === 'a_faire' && x.phase === 1), JSON.stringify(soin.futures.slice(0, 3)));
+    assert.ok(soin.futures.every(x => x.etat === 'a_faire'));
+    // Planning sur les 3 phases (durées maximales) : phase 1, puis 2, puis 3, dans l'ordre des dates.
+    assert.deepEqual([...new Set(soin.futures.map(x => x.phase))], [1, 2, 3]);
+    assert.ok(soin.futures.length >= 70, `séances de soin à venir : ${soin.futures.length}`);
     await page.goto(`${URL_APP}#/accueil`);
     const pastilleDuJour = page.locator('.jour-auj .pastille-soin');
     await pastilleDuJour.and(page.locator('.etat-faite')).waitFor();
@@ -380,13 +383,13 @@ async function main() {
     soin = await etatSoin();
     assert.equal(soin.etat, 'faite');
     assert.equal(soin.phase, 1);
-    assert.ok(soin.futures.length > 0 && soin.futures.every(x => x.phase === 2), JSON.stringify(soin.futures.slice(0, 3)));
+    assert.deepEqual([...new Set(soin.futures.map(x => x.phase))], [2, 3]);
     await page.goto(`${URL_APP}#/soin`);
     await page.getByRole('button', { name: 'Revenir en phase 1' }).click();
     await page.locator('.boite').getByRole('button', { name: 'Revenir' }).click();
     await page.locator('.boite', { hasText: 'Recalculer' }).getByRole('button', { name: 'Plus tard' }).click();
     soin = await etatSoin();
-    assert.ok(soin.futures.every(x => x.phase === 1) && soin.futures.length >= 20);
+    assert.deepEqual([...new Set(soin.futures.map(x => x.phase))], [1, 2, 3]);
 
     etape('Export JSON (sans clé API) puis import avec confirmation');
     await page.goto(`${URL_APP}#/reglages/sauvegarde`);
@@ -403,7 +406,7 @@ async function main() {
     assert.equal(exportJson.donnees.blessures.length, 1);
     assert.equal(exportJson.donnees.bilans.length, 1);
     assert.equal(exportJson.format, 3);
-    assert.ok(exportJson.donnees.seancesSoin.length >= 20);
+    assert.ok(exportJson.donnees.seancesSoin.length >= 70);
     assert.match(telechargement.suggestedFilename(), /^dossard-sauvegarde-\d{4}-\d{2}-\d{2}\.json$/);
     await page.getByText(/Dernier export : /).waitFor();
 

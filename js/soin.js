@@ -542,25 +542,27 @@ export function exercicesObligatoires(suivi, date) {
   return (seance?.exercices ?? []).filter(e => !e.facultatif && !e.repos).map(e => ({ id: e.id, nom: e.nom, dosage: e.dosage }));
 }
 
-// Dernier jour planifié : fin prévue de la phase en cours (durée maximale), au moins 7 jours à partir d'aujourd'hui.
+// Dernier jour planifié : fin de la dernière phase du programme, phases enchaînées à leur durée maximale
+// (même projection que pour le plan IA ; la phase en cours dure au moins 7 jours à partir d'aujourd'hui).
 export function finPlanificationSoin(suivi, aujourdhui) {
-  const phase = phaseDe(suivi);
-  const finPrevue = ajouterJours(suivi.phaseDebut, phase.dureeMaxSem * 7 - 1);
-  const minimum = ajouterJours(aujourdhui, 6);
-  return finPrevue < minimum ? minimum : finPrevue;
+  return projectionPhases(suivi, aujourdhui).at(-1).au;
 }
 
 // Tous les exercices de la séance sont-ils cochés dans le bilan ?
 export const bilanComplet = (seance, bilan) => !!bilan && seance.exercices.every(e => bilan.exercices?.includes(e.id));
 
-// Séances de soin attendues d'aujourd'hui à la fin de la phase en cours, pour chaque suivi en cours.
+// Séances de soin attendues d'aujourd'hui à la fin du programme, pour chaque suivi en cours.
+// Phase en cours : depuis son vrai début ; phases suivantes : depuis leur début projeté (dosage et alternance repartent à zéro).
+// Les phases futures sont recalculées au vrai changement de phase.
 export function seancesAttendues(suivis, aujourdhui) {
   const attendues = [];
   for (const s of suivisActifs(suivis)) {
-    const fin = finPlanificationSoin(s, aujourdhui);
-    for (let date = aujourdhui; date <= fin; date = ajouterJours(date, 1)) {
-      const exercices = exercicesObligatoires(s, date);
-      if (exercices.length) attendues.push({ blessureId: s.id, date, phase: s.phase, semaine: semaineDansPhase(s, date), exercices });
+    for (const f of projectionPhases(s, aujourdhui)) {
+      const projete = f.phase === s.phase ? s : { ...s, phase: f.phase, phaseDebut: f.du };
+      for (let date = f.du; date <= f.au; date = ajouterJours(date, 1)) {
+        const exercices = exercicesObligatoires(projete, date);
+        if (exercices.length) attendues.push({ blessureId: s.id, date, phase: f.phase, semaine: semaineDansPhase(projete, date), exercices });
+      }
     }
   }
   return attendues;
