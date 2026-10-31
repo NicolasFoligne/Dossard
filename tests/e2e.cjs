@@ -130,6 +130,25 @@ async function main() {
     await page.locator('.toast', { hasText: 'Séance enregistrée' }).last().waitFor();
     await capture('05-accueil');
 
+    etape('Nouvelles disciplines : rameur (allure /500 m, distance en mètres), mobilité, marche rattachée aux objectifs');
+    await page.getByRole('button', { name: 'Saisir une séance réalisée' }).click();
+    await page.locator('.feuille .puce', { hasText: 'Rameur' }).click();
+    await page.locator('.feuille [name=duree_h]').fill('');
+    await page.locator('.feuille [name=duree_m]').fill('8');
+    await page.locator('.feuille').getByText('Distance (m)').waitFor();
+    await page.locator('.feuille [name=distance]').fill('2000');
+    assert.equal(await page.locator('.feuille .calcul').textContent(), 'Allure : 2:00 /500 m');
+    await page.locator('.feuille .puce', { hasText: 'Mobilité' }).click();
+    assert.equal(await page.locator('.feuille [name=distance]').count(), 0);
+    await page.locator('.feuille .puce', { hasText: 'Marche' }).click();
+    assert.match(await page.locator('.feuille .aide-rattachement').textContent(), /Semi de Lyon/);
+    await page.locator('.feuille .puce', { hasText: 'Home trainer' }).click();
+    await page.locator('.feuille [name=distance]').fill('20');
+    assert.equal(await page.locator('.feuille .calcul').textContent(), 'Vitesse : 150 km/h');
+    await capture('05b-disciplines');
+    await page.locator('.feuille').getByRole('button', { name: 'Fermer' }).click();
+    await page.locator('.feuille').waitFor({ state: 'detached' });
+
     etape('Historique : totaux et filtres');
     await page.getByRole('link', { name: 'Historique', exact: true }).click();
     assert.match(await page.locator('.semaine-total').first().textContent(), /2 séances · 2 h 15/);
@@ -146,8 +165,30 @@ async function main() {
     await page.locator('[name=plafond]').fill('3');
     await page.locator('.interrupteur', { hasText: 'Mardi' }).click();
     await page.locator('[data-puces=disciplines_1] .puce', { hasText: 'Course' }).click();
+    // Créneaux : 18 h – 19 h proposé d'office, puis un second créneau réglé avec les curseurs.
+    const mardi = page.locator('.jour-semainier').nth(1);
+    await mardi.locator('.creneau-libelle', { hasText: '18 h – 19 h · 1 h' }).waitFor();
+    await mardi.getByRole('button', { name: '＋ Ajouter un créneau' }).click();
+    const matin = mardi.locator('.creneau').first();
+    await matin.locator('.creneau-libelle', { hasText: '7 h – 8 h · 1 h' }).waitFor();
+    await matin.getByLabel('Mardi : début du créneau').fill('390');
+    await matin.getByLabel('Mardi : fin du créneau').fill('450');
+    await matin.locator('.creneau-libelle', { hasText: '6 h 30 – 7 h 30 · 1 h' }).waitFor();
+    await matin.getByLabel('Mardi : fin du créneau').fill('375'); // pousse le début : 15 min minimum
+    await matin.locator('.creneau-libelle', { hasText: '6 h – 6 h 15 · 15 min' }).waitFor();
+    await matin.getByLabel('Mardi : fin du créneau').fill('450');
+    await matin.locator('.creneau-libelle', { hasText: '6 h – 7 h 30 · 1 h 30' }).waitFor();
+    await mardi.getByText('Disponible : 2 h 30').waitFor();
     await page.getByRole('button', { name: 'Enregistrer le semainier' }).click();
     await page.locator('.toast', { hasText: 'Semainier enregistré' }).waitFor();
+    const mardiEnregistre = await page.evaluate(async () => (await import('./js/magasin.js')).etat.semainier.jours[1]);
+    assert.deepEqual(mardiEnregistre.creneaux, [{ debut: 360, fin: 450 }, { debut: 1080, fin: 1140 }]);
+    assert.equal(mardiEnregistre.dureeMaxMin, 150);
+    await capture('07b-semainier-creneaux');
+    // Profil : les zones de texte ne déclenchent pas l'autoremplissage du navigateur (adresse e-mail…).
+    await page.goto(`${URL_APP}#/reglages/profil`);
+    assert.equal(await page.locator('form').getAttribute('autocomplete'), 'off');
+    assert.equal(await page.locator('textarea[name=blessures]').getAttribute('autocomplete'), 'off');
     await capture('07-semainier');
     await page.goto(`${URL_APP}#/reglages/ia`);
     assert.equal(await page.locator('[name=cle]').getAttribute('type'), 'password');
@@ -163,9 +204,10 @@ async function main() {
       const IA = await import('./js/ia.js');
       const M = await import('./js/magasin.js');
       const F = await import('./js/format.js');
-      const c = IA.construireContexte(M.etat, F.aujourdhui());
+      const maintenant = new Date();
+      const c = IA.construireContexte(M.etat, F.aujourdhui(), { minutesActuelles: maintenant.getHours() * 60 + maintenant.getMinutes() });
       const seances = c.calendrier.flatMap(sem => sem.jours.slice(0, sem.plafondRestant ?? 7).map(j => ({
-        date: j.date, discipline: j.disciplines[0], type: 'endurance', intensite: 'facile', dureeMin: Math.min(40, j.dureeMaxMin ?? 40),
+        date: j.date, heureDebut: j.creneaux[0].debut, discipline: j.disciplines[0], type: 'endurance', intensite: 'facile', dureeMin: 15,
         distanceKm: 7, echauffement: '10 min très facile', corps: '25 min en endurance fondamentale', retourCalme: '5 min de marche', objectifIds: c.objectifs.map(o => o.id),
       })));
       return { analyse: 'Temps visé ambitieux mais crédible.', phases: [{ nom: 'foncière', debut: c.debut, fin: F.ajouterJours(c.debut, 27), description: 'Construire la base' }], seances };
@@ -205,6 +247,8 @@ async function main() {
     await boutonValider.click();
     await page.locator('.toast', { hasText: 'Plan enregistré' }).waitFor();
     await page.getByText('Phase actuelle : foncière').waitFor();
+    // Chaque séance IA est placée dans un créneau : son heure de début s'affiche dans le planning.
+    await page.locator('.ligne-seance', { hasText: /🏃 · (6 h|18 h)\b.* · Endurance · 15 min/ }).first().waitFor();
     assert.ok(await page.locator('.ecran .etiquette-ia').count() < nbSeancesIa); // 4 semaines affichées d'emblée
     await page.getByRole('button', { name: /^Afficher les \d+ semaines suivantes$/ }).click();
     assert.equal(await page.locator('.ecran .etiquette-ia').count(), nbSeancesIa);
