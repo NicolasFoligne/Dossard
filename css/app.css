@@ -801,8 +801,36 @@ details.test-montees .formulaire { padding-bottom: 10px; }
 
 /* ---------------------------------------------------------------- Fiches d'exercice et séance guidée */
 
-details.fiche { margin-top: 4px; }
-details.fiche > summary { min-height: 40px; font-size: 0.92rem; color: var(--soin); }
+/* Exercice touchable (ouvre sa fiche) et bouton « ? ». */
+.exercice-touchable {
+  appearance: none; border: 0; background: transparent; color: inherit; font: inherit; text-align: left;
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 2px 0; cursor: pointer;
+}
+.exercice-touchable-texte { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.bouton-fiche {
+  appearance: none; flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  border: 2px solid var(--soin); background: var(--surface); color: var(--soin); font: 800 1rem/1 inherit; cursor: pointer;
+}
+button.bouton-fiche { width: 44px; height: 44px; font-size: 1.2rem; }
+.exercice-touchable:focus-visible, .bouton-fiche:focus-visible, .minuteur-exercice:focus-visible { outline: 3px solid var(--soin); outline-offset: 2px; border-radius: 8px; }
+.programme-exercice .exercice-touchable { min-height: 40px; }
+
+/* Fiche d'exercice : schéma en bonhomme filaire (couleurs du thème, mode sombre compris). */
+.fiche { display: flex; flex-direction: column; gap: 12px; }
+.fiche-schema { background: var(--soin-doux); border-radius: var(--rayon); padding: 8px; }
+.schema { display: block; width: 100%; max-width: 360px; height: auto; margin: 0 auto; }
+.schema-sol { stroke: var(--texte-2); stroke-width: 1.5; }
+.schema-corps { fill: none; stroke: var(--texte); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.schema-decor { fill: none; stroke: var(--texte-2); stroke-width: 2; stroke-linejoin: round; }
+.schema-zone { fill: var(--soin); opacity: 0.35; }
+.schema-fleche { fill: none; stroke: var(--soin); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.schema-fleche circle { fill: var(--soin); }
+.schema-elastique { fill: none; stroke: var(--attention); stroke-width: 2.5; stroke-dasharray: 4 3; }
+.schema-glace { fill: var(--info); stroke: var(--info); }
+.schema-generique { opacity: 0.75; max-width: 220px; }
+.fiche-objectif { font-size: 1rem; }
+.fiche-douleur { background: var(--attention-doux); border-radius: 10px; padding: 4px 12px 8px; }
+.fiche-douleur h4 { color: var(--attention); }
 .fiche-corps { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 8px 4px; font-size: 0.93rem; }
 .fiche-corps h4 { margin: 8px 0 0; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--texte-2); }
 .fiche-corps ol, .fiche-corps ul, .fiche-consignes { margin: 2px 0; padding-left: 22px; }
@@ -816,16 +844,26 @@ details.fiche > summary { min-height: 40px; font-size: 0.92rem; color: var(--soi
 .seance-guidee { display: flex; flex-direction: column; gap: 14px; text-align: center; }
 .seance-guidee .soin-exercices { text-align: left; }
 .seance-guidee .interrupteur { text-align: left; }
-.minuteur-exercice { font-size: 1.3rem; color: var(--soin); }
+.minuteur-titre { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.minuteur-exercice {
+  appearance: none; border: 0; background: transparent; font: inherit; font-size: 1.3rem; font-weight: 700; color: var(--soin);
+  text-decoration: underline dotted; text-underline-offset: 4px; cursor: pointer; min-height: 44px; padding: 0;
+}
+.exercice-depart { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.repos-reglage { display: flex; align-items: center; gap: 4px; font-size: 0.9rem; color: var(--texte-2); }
+.repos-reglage > span { flex: 1; }
+.repos-valeur { min-width: 5.5em; text-align: center; font-weight: 700; color: var(--texte); font-variant-numeric: tabular-nums; }
+.repos-reglage .bouton-icone { border: 1px solid var(--bordure); border-radius: 50%; color: var(--texte); }
+.interrupteur-aide { margin: -10px 0 0; text-align: left; }
 .minuteur-dosage { color: var(--texte-2); }
 .minuteur-serie { font-weight: 700; font-size: 1.05rem; }
 .minuteur-cadran {
   background: var(--soin-doux); border-radius: 20px; padding: 20px 16px 16px;
   display: flex; flex-direction: column; gap: 8px; align-items: stretch;
 }
-.minuteur-cadran.minuteur-recup, .minuteur-cadran.minuteur-transition { background: var(--surface-2); }
+.minuteur-cadran.minuteur-pause { background: var(--surface-2); }
 .minuteur-grand { font-size: clamp(3.5rem, 22vw, 6rem); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--soin); }
-.minuteur-recup .minuteur-grand, .minuteur-transition .minuteur-grand { color: var(--texte); }
+.minuteur-pause .minuteur-grand { color: var(--texte); }
 .minuteur-phase { font-size: 1.4rem; font-weight: 700; min-height: 1.6em; }
 .minuteur-cadran .barre span { background: var(--soin); }
 .minuteur-plus { min-height: 96px; font-size: 2rem; }

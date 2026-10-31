@@ -5,6 +5,8 @@ import * as U from '../ui.js';
 import { lireImport, resumeImport } from '../sauvegarde.js';
 import { VERSION } from '../version.js';
 import { rechercherMiseAJour } from '../miseajour.js';
+import { creerSignaux, vibrationDisponible, voixDisponible } from '../signaux.js';
+import { preferencesSeance, NOTE_SILENCIEUX } from './seanceGuidee.js';
 
 const { h } = U;
 
@@ -12,6 +14,7 @@ const SECTIONS = [
   { id: 'profil', titre: 'Profil sportif', icone: '👤', ecran: ecranProfil },
   { id: 'semainier', titre: 'Semainier', icone: '📅', ecran: ecranSemainier },
   { id: 'ia', titre: 'Clé API et modèle IA', icone: '🔑', ecran: ecranIa },
+  { id: 'seance', titre: 'Séance guidée', icone: '⏱️', ecran: ecranSeance },
   { id: 'sauvegarde', titre: 'Sauvegarde', icone: '💾', ecran: ecranSauvegarde },
   { id: 'apropos', titre: 'À propos', icone: 'ℹ️', ecran: ecranAPropos },
 ];
@@ -236,6 +239,56 @@ function ecranIa() {
       if (ok) { U.toast('Réglages IA enregistrés'); dessiner(); }
     });
     U.vider(conteneur, form);
+  };
+  dessiner();
+  return conteneur;
+}
+
+// ------------------------------------------------------------ Séance guidée
+
+function ecranSeance() {
+  const conteneur = h('div');
+  const dessiner = () => {
+    const prefs = preferencesSeance();
+    const enregistrer = () => M.enregistrerPreferencesSeance(JSON.parse(JSON.stringify(prefs))).catch(() => {});
+    const choix = (cle, libelle, aide = null) => {
+      const el = U.interrupteur(cle, prefs[cle], libelle);
+      el.querySelector('input').addEventListener('change', ev => { prefs[cle] = ev.target.checked; enregistrer(); });
+      return [el, aide && h('p.aide.interrupteur-aide', aide)];
+    };
+    const reposPerso = Object.keys(prefs.repos ?? {}).length;
+    U.vider(conteneur,
+      h('section.carte.formulaire',
+        h('p.aide', 'Signaux pendant le minuteur des séances de soin : 3-2-1 et bip de départ, bips sur les 3 dernières secondes, bip de fin, '
+          + 'annonces (« Série 2 sur 5, contraction 30 secondes », « Repos », « Exercice terminé »).'),
+        choix('bips', 'Sons (bips)'),
+        choix('voix', 'Voix (annonces en français)', voixDisponible() ? null : 'Synthèse vocale indisponible sur ce navigateur.'),
+        choix('vibration', 'Vibration', vibrationDisponible() ? null : 'Indisponible sur cet appareil : l\'iPhone ne permet pas la vibration aux applications web.'),
+        h('p.bandeau-info', `🔔 ${NOTE_SILENCIEUX}`),
+        h('button.bouton.secondaire', {
+          type: 'button',
+          onclick: () => {
+            const s = creerSignaux(prefs);
+            s.debloquer();
+            s.signal('compte');
+            setTimeout(() => s.signal('depart'), 700);
+            setTimeout(() => { s.signal('fin'); s.parler('Série 1 sur 5, contraction 30 secondes.'); }, 1600);
+            setTimeout(() => s.fermer(), 8000);
+          },
+        }, '🔊 Tester les sons et la voix')),
+      h('section.carte',
+        h('h2', 'Repos entre séries'),
+        h('p.aide', 'Réglable exercice par exercice sur l\'écran de départ de la séance guidée (− / ＋). Par défaut : celui du programme, '
+          + '60 s pour les exercices isométriques.'),
+        reposPerso > 0 && h('button.bouton.secondaire', {
+          type: 'button',
+          onclick: async () => {
+            prefs.repos = {};
+            await U.tenter(() => M.enregistrerPreferencesSeance(JSON.parse(JSON.stringify(prefs))));
+            U.toast('Repos par défaut rétablis');
+            dessiner();
+          },
+        }, `Rétablir les repos par défaut (${reposPerso} modifié${reposPerso > 1 ? 's' : ''})`)));
   };
   dessiner();
   return conteneur;

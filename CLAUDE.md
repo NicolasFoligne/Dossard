@@ -231,23 +231,58 @@ _(Section tenue à jour au fil des sessions.)_
 
 ### Fiches d'exercice et séance de soin guidée (version 1.6.0)
 
-- **Fiches détaillées** (`FICHES` de `js/programmes.js`, rattachées aux exercices par `FICHES_PAR_PROGRAMME`) : pour chaque
-  exercice, `details` = position de départ, étapes numérotées, respiration, ce qu'on doit ressentir (douleur tolérée), erreurs
-  fréquentes, versions plus facile / plus difficile ; affichées repliées (« Comment faire ») dans la séance de soin, l'écran du suivi
-  et le programme complet. Les programmes proposés par une IA peuvent fournir les mêmes champs (`details`, `seance`), demandés
-  par le texte copié ; ils sont validés (`lireDetails`, `lireSeance` de `js/blessure-ia.js`).
-- **Rythme** (`seance` de chaque exercice) : `tempo` = phases d'une répétition `[libellé, secondes]` (ex. Monte 3 s / Descends 3 s),
+- **Fiches détaillées** : position de départ, étapes numérotées, respiration, ce qu'on doit ressentir (douleur tolérée), erreurs
+  fréquentes, versions plus facile / plus difficile. Depuis la v1.7.0, elles vivent dans la bibliothèque `js/exercices.js`
+  (voir ci-dessous) et s'ouvrent d'un tap sur l'exercice (feuille), au lieu du bloc replié « Comment faire ».
+- **Rythme** (`seance` de chaque exercice ; depuis la v1.7.0, celui de la bibliothèque, remplaçable champ par champ par le programme) : `tempo` = phases d'une répétition `[libellé, secondes]` (ex. Monte 3 s / Descends 3 s),
   `null` = on compte soi-même (sauts, pas chassés) ; `recupS` = récupération entre séries ; `libelleTenue` = consigne d'une tenue.
 - **Dosage lu par la séance guidée** (`analyserDosage` de `js/seance-guidee.js`, partie après « · ») : « 5 × 45 s » (tenues),
   « 3 × 15 » (répétitions), « 3 × 10 fois 10 s » (répétitions de tenues, 3 s de relâchement), « 2 min » / « 1 à 2 min » (durée,
   borne haute), « par côté » / « par jambe » (chaque série des deux côtés), sinon exercice libre (« C'est fait »).
 - **Séance guidée** (`ecrans/seanceGuidee.js`) : « ▶ Commencer la séance guidée » (détail d'une séance de soin) ou « ▶ Séance guidée »
-  (carte verte de l'accueil, écran du suivi). Enchaîne exercices, séries, récupérations et une préparation de 15 s avant l'exercice
+  (carte verte de l'accueil, écran du suivi). Enchaîne exercices, séries, repos et une préparation de 15 s avant l'exercice
   suivant ; grand compte à rebours, tempo guidé qui compte seul les répétitions (« Je compte moi-même » : bouton ＋1), pause,
   passer, recommencer / revenir ; écran maintenu allumé ; à la fin, « Marquer la séance faite » (reporté dans le bilan du jour,
-  puis toutes les feuilles se ferment). Signaux : bips (Web Audio) et voix française (synthèse vocale) — annonces d'étape,
-  phases du tempo, 3 bips avant la fin d'une tenue ; voix et bips désactivables (`appareil.preferencesSeance`, jamais exporté).
-  Pas de vibration (indisponible sur iPhone dans une application web).
+  puis toutes les feuilles se ferment). Signaux : voir « Guidage sonore » (v1.7.0).
+
+### Bibliothèque d'exercices et guidage sonore (version 1.7.0)
+
+- **Bibliothèque** (`EXERCICES` de `js/exercices.js`, 27 exercices) : tous les exercices des programmes du catalogue y renvoient
+  par leur champ `fiche` (table `FICHES_PAR_PROGRAMME` de `js/programmes.js`, contrôlée au chargement). Chaque exercice :
+  id, nom, objectif, matériel, position de départ, étapes, respiration, sensation attendue / intensité, erreurs fréquentes,
+  **adaptation si douleur**, variantes, rythme de séance (`seance` : tempo, `recupS`, `libelleTenue`, `motTenue` = mot dit par la voix),
+  `isometrique`, et un **schéma SVG** en bonhomme filaire (`schema`, dessiné par `schemaSvg` : couleurs portées par des classes CSS
+  et les jetons du thème, donc compatibles avec le mode sombre ; zone travaillée en vert, flèches de mouvement, élastique en pointillés).
+- **Fiche** (`ecrans/fiche.js`, `ficheDe` de `js/exercices.js`) : un tap sur un exercice ouvre sa fiche dans une feuille (séance de soin,
+  carte de l'accueil, écran du suivi, programme complet, écran de départ et **pendant le chrono** de la séance guidée : nom de l'exercice
+  touchable et bouton « ? » toujours visible ; le chrono continue dessous). Ordre : schéma, objectif, cible, matériel, consignes
+  du programme, départ, étapes, sensation, respiration, erreurs, « Si douleur », variantes.
+- **Programmes proposés par une IA** : le texte copié donne la liste de la bibliothèque (id, nom, objectif) ; l'IA choisit les exercices
+  par `fiche` (id) — fiche, schéma et rythme viennent alors de l'application, `seance` facultatif pour changer le rythme. Un exercice
+  absent de la bibliothèque doit fournir `details` complet (objectif, matériel, départ, étapes, sensation, erreurs, adaptation sont
+  obligatoires) et son `seance` ; il s'affiche avec une **icône générique** à la place du schéma. Un `fiche` inconnu est refusé.
+  Les programmes déjà enregistrés (sauvegarde) restent acceptés sans fiche complète (`validerProgramme(…, { exigerFiches: false })`).
+- **Guidage sonore** (`js/signaux.js`) :
+  - bips (Web Audio API) : **3-2-1** pendant les 3 dernières secondes de la pause qui précède une série, **bip de départ**,
+    bips sur les **3 dernières secondes** d'une tenue, **bip de fin** (aussi à la fin d'une série au tempo ou au compteur) ;
+  - voix fr-FR (speechSynthesis), mise en file : « Préparez-vous. », puis la série annoncée pendant la pause, ~8 s avant sa fin
+    (« Série 2 sur 5, contraction 30 secondes » ; nom de l'exercice à sa première série), « Repos, 1 minute. », « Exercice terminé. »,
+    « Séance terminée, bravo ! » ; le rythme du tempo (« Monte », « Descends ») interrompt l'annonce en cours ;
+  - vibration (`navigator.vibrate`, si disponible : pas sur iPhone) au départ, à la fin et sur les décomptes ;
+  - réglages on/off **sons, voix, vibration** (Réglages › Séance guidée, et écran de départ de la séance) avec un bouton
+    « Tester les sons et la voix » et la note « Sur iPhone, désactivez le mode silencieux pour entendre les sons » ;
+  - son et voix **débloqués au tap sur « Démarrer »** (AudioContext créé et `resume()`, échantillon silencieux, énoncé vide),
+    sans `await` avant la première annonce ; **Wake Lock** repris quand l'application revient au premier plan.
+- **Étapes** (`etapesSeance`) : préparation de 10 s avant le premier exercice ; entre deux séries, le **repos** (`recup`) ou, s'il vaut 0,
+  une préparation de 5 s ; transition de 15 s avant l'exercice suivant. Chaque pause porte l'annonce de la série suivante (`suivante`).
+- **Repos entre séries** : 60 s par défaut pour les isométriques (isométrie du mollet, du soléaire, d'abduction, chaise, gainage latéral,
+  pied court ; l'isométrie de la cheville garde 10 s entre ses tenues courtes), sinon celui de la fiche. **Réglable par exercice** sur l'écran
+  de départ (− / ＋, pas de 15 s, 0 à 5 min), mémorisé par exercice de la bibliothèque dans `appareil.preferencesSeance.repos`
+  (jamais exporté) ; « Rétablir les repos par défaut » dans les réglages.
+- **Chrono horodaté** : chaque étape garde son heure de début (`Date.now()`) ; le minuteur (tic de 100 ms) ne fait qu'afficher.
+  Si l'onglet a été ralenti ou mis en arrière-plan, `rattraper` passe les étapes minutées terminées (chacune commence à la fin exacte
+  de la précédente) et s'arrête sur une étape non minutée (compteur, exercice libre, tempo compté à la main) ; seul le dernier
+  changement est signalé. La pause décale l'heure de début.
 
 ### Architecture
 
@@ -258,18 +293,22 @@ _(Section tenue à jour au fil des sessions.)_
   - `sauvegarde.js` : construction et validation de l'export JSON (pur) ;
   - `programmes.js` : catalogue des programmes de soin (contenu générique) ;
   - `blessure-ia.js` : nouvelle blessure — texte à copier dans une IA, validation du programme collé (pur) ;
-  - `seance-guidee.js` : séance de soin guidée — lecture du dosage, étapes, tempo (pur) ;
+  - `exercices.js` : bibliothèque des exercices de soin — fiches, rythme, schémas SVG (pur) ;
+  - `seance-guidee.js` : séance de soin guidée — lecture du dosage, étapes et annonces, tempo, chrono horodaté (pur) ;
+  - `signaux.js` : bips (Web Audio), voix (synthèse vocale), vibration, écran maintenu allumé ;
   - `soin.js` : suivi de blessure — référentiel des programmes (catalogue + personnels), bilans, exercices du jour, alertes, critères de passage, contraintes du plan IA,
     séances de soin du planning (génération, lien avec le bilan) (pur) ;
   - `ia.js` : contexte envoyé, prompt, schéma JSON de la réponse, validation, remplacement des séances (pur) ;
   - `ia-api.js` : appel de l'API Anthropic en streaming, essais et gestion des erreurs ;
   - `db.js` : IndexedDB (base `dossard`, version 4) ; magasins `kv` (profil, semainier, réglages), `objectifs`, `prevues`, `realisees`, `blessures`, `bilans`, `seancesSoin`, `programmes`
-    — exportés (dont `kv.plan`) — et `appareil` (clé API, date du dernier export, première utilisation) — **jamais exporté** ;
+    — exportés (dont `kv.plan`) — et `appareil` (clé API, date du dernier export, première utilisation, brouillon de blessure,
+    réglages de la séance guidée) — **jamais exporté** ;
   - `magasin.js` : état en mémoire + actions qui écrivent dans IndexedDB ;
   - `ui.js` : création d'éléments, feuilles modales, champs ; `miseajour.js` : service worker et bandeau de mise à jour ;
   - `ecrans/` : accueil, plan, planIa (génération, mode secours, aperçu), objectifs, historique, réglages, formulaires, soin (suivi de blessure),
-    blessure (ajouter une blessure : catalogue, description pour l'IA, programme collé), seanceGuidee (minuteur, tempo, voix).
-- Navigation par ancre (`#/accueil`, `#/plan`, `#/objectifs`, `#/historique`, `#/reglages[/profil|semainier|ia|sauvegarde|apropos]`, `#/soin[/<id>|/liste]`).
+    blessure (ajouter une blessure : catalogue, description pour l'IA, programme collé), seanceGuidee (minuteur, tempo, signaux),
+    fiche (fiche d'un exercice, exercice touchable, bouton « ? »).
+- Navigation par ancre (`#/accueil`, `#/plan`, `#/objectifs`, `#/historique`, `#/reglages[/profil|semainier|ia|seance|sauvegarde|apropos]`, `#/soin[/<id>|/liste]`).
 - L'onglet **Plan** : carte du plan IA (phase, analyse, « Recalculer le plan »), séances prévues (4 semaines affichées, puis bouton « Afficher les semaines suivantes »), ajout manuel.
 
 ### Livraison et mises à jour
@@ -284,9 +323,12 @@ _(Section tenue à jour au fil des sessions.)_
 - `node tests/soin.test.js` : suivi de blessure (cycle de vie, bilans, exercices du jour, alertes, critères, contraintes et validation du plan IA,
   séances de soin du planning : génération, régénération, lien avec le bilan, isolement du plan IA, export/import ;
   catalogue, programmes proposés par une IA : validation, refus motivés, texte pour l'IA, sauvegarde ;
-  fiches et séance guidée : dosages, étapes, tempo, couverture des fiches du catalogue).
+  bibliothèque des exercices : couverture du catalogue, fiches complètes, schémas ; séance guidée : dosages, étapes et annonces,
+  repos réglable, tempo, chrono horodaté et rattrapage).
 - `node tests/ia.test.js` : génération IA (contexte, validation stricte, remplacement, streaming et essais avec API simulée).
 - `node tests/statique.test.js` : manifest, service worker, chemins relatifs, version, absence de secrets.
 - `node tests/e2e.cjs [dossier-captures]` : parcours complet dans Chromium (Playwright), servi sous `/dossard/`,
   génération IA (API simulée), mode secours, hors ligne et mise à jour compris ; échoue à la moindre erreur JavaScript ou HTTP.
+  Écran de téléphone (390 × 844, tactile) ; voix, bips (fréquences) et vibrations enregistrés au lieu d'être joués ; le rattrapage
+  du chrono est testé en avançant `Date.now`.
 - `node outils/generer-icones.cjs icons` : régénère les PNG à partir de `icons/icone.svg`.
