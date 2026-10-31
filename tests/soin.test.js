@@ -516,3 +516,104 @@ test('sauvegarde : programmes personnels exportés et réimportés, suivi sans p
     S.definirProgrammesPerso([]);
   }
 });
+
+// ------------------------------------------------------------ Séance guidée et fiches détaillées (v1.6.0)
+
+import * as G from '../js/seance-guidee.js';
+
+test('séance guidée : lecture des dosages', () => {
+  assert.deepEqual(G.analyserDosage('Sur les 2 pieds · 5 × 45 s'), { mode: 'tenue', series: 5, dureeS: 45, parCote: false });
+  assert.deepEqual(G.analyserDosage('Corde à sauter · 3 × 1 min'), { mode: 'tenue', series: 3, dureeS: 60, parCote: false });
+  assert.deepEqual(G.analyserDosage('3 × 20 s par côté'), { mode: 'tenue', series: 3, dureeS: 20, parCote: true });
+  assert.deepEqual(G.analyserDosage('Jambe gauche seule, si douleur ≤ 4/10 · 3 × 15'), { mode: 'reps', series: 3, reps: 15, parCote: false });
+  assert.deepEqual(G.analyserDosage('4 × 10 avec 10 kg'), { mode: 'reps', series: 4, reps: 10, parCote: false });
+  assert.deepEqual(G.analyserDosage('3 × 10 par jambe'), { mode: 'reps', series: 3, reps: 10, parCote: true });
+  assert.deepEqual(G.analyserDosage('3 × 15, tenue 3 s'), { mode: 'reps', series: 3, reps: 15, parCote: false });
+  assert.deepEqual(G.analyserDosage('3 × 10 fois 10 s'), { mode: 'tenues', series: 3, reps: 10, tenueS: 10, parCote: false });
+  assert.deepEqual(G.analyserDosage('1 à 2 min'), { mode: 'duree', series: 1, dureeS: 120, parCote: false });
+  assert.deepEqual(G.analyserDosage('15 min'), { mode: 'duree', series: 1, dureeS: 900, parCote: false });
+  assert.equal(G.analyserDosage('Alphabet complet, 2 fois').mode, 'libre');
+  assert.equal(G.dureeParlee(45), '45 secondes');
+  assert.equal(G.dureeParlee(120), '2 minutes');
+  assert.equal(G.dureeParlee(90), '1 minute 30');
+});
+
+test('séance guidée : étapes enchaînées (tenues, tempo, compteur, récupérations, transitions)', () => {
+  const s = nouveauSuivi({ debut: '2026-10-20' }); // Achille, semaine 2 le 30/10 : 3 exercices
+  const [seance] = S.reconcilierSoin([s], [], [], AUJ).aMettre;
+  const phase = S.phaseDe(s);
+  const exercices = seance.exercices.map(e => ({ ...e, seance: phase.exercices.find(p => p.id === e.id).seance }));
+  const etapes = G.etapesSeance(exercices);
+  // Isométrie : 5 tenues de 45 s séparées par 4 récupérations de 2 min, puis transition.
+  const iso = etapes.filter(e => e.exercice.id === 'iso_debout');
+  assert.deepEqual(iso.map(e => e.type), ['tenue', 'recup', 'tenue', 'recup', 'tenue', 'recup', 'tenue', 'recup', 'tenue', 'transition']);
+  assert.equal(iso[0].dureeS, 45);
+  assert.equal(iso[1].dureeS, 120);
+  assert.equal(iso[0].annonce, 'Isométrie debout, jambe tendue. Série 1 sur 5. Tenez 45 secondes.');
+  assert.equal(iso.at(-1).annonce, 'Exercice suivant : Isométrie assis, genou plié.');
+  // Montées lentes : tempo 3 s / 3 s, 15 répétitions, 3 séries.
+  const montees = etapes.filter(e => e.exercice.id === 'montees_lentes' && e.type === 'tempo');
+  assert.equal(montees.length, 3);
+  assert.deepEqual(montees[0].phases, [['Monte', 3], ['Descends', 3]]);
+  assert.equal(montees[0].reps, 15);
+  assert.equal(etapes.at(-1).exercice.id, 'montees_lentes'); // pas de transition ni de récupération à la fin
+  assert.equal(etapes.at(-1).type, 'tempo');
+  assert.ok(G.dureeEstimee(etapes) > 20 * 60);
+
+  // Sautillements : compteur à la main ; gainage par côté : deux tenues par série.
+  const autres = G.etapesSeance([
+    { id: 'sautillements', nom: 'Sautillements', dosage: 'Sur les 2 pieds · 3 × 20', seance: { tempo: null, recupS: 90 } },
+    { id: 'gainage', nom: 'Gainage latéral', dosage: '2 × 30 s par côté', seance: { recupS: 45, libelleTenue: 'Gainez' } },
+    { id: 'alphabet', nom: 'Mobilité', dosage: 'Alphabet complet, 2 fois' },
+  ]);
+  assert.equal(autres[0].type, 'compteur');
+  assert.equal(autres[0].annonce, 'Sautillements. Série 1 sur 3. 20 répétitions, à votre rythme.');
+  const gainage = autres.filter(e => e.exercice.id === 'gainage' && e.type === 'tenue');
+  assert.deepEqual(gainage.map(e => `${e.serie} ${e.cote}`), ['1 premier côté', '1 second côté', '2 premier côté', '2 second côté']);
+  assert.match(gainage[1].annonce, /Second côté\. Gainez 30 secondes\./);
+  assert.equal(autres.at(-1).type, 'libre');
+});
+
+test('séance guidée : position dans un tempo', () => {
+  const phases = [['Monte', 3], ['Descends', 3]];
+  assert.deepEqual(G.positionTempo(phases, 15, 0), { rep: 1, phase: 0, libelle: 'Monte', resteS: 3, fini: false });
+  assert.deepEqual(G.positionTempo(phases, 15, 4), { rep: 1, phase: 1, libelle: 'Descends', resteS: 2, fini: false });
+  assert.equal(G.positionTempo(phases, 15, 6.5).rep, 2);
+  assert.equal(G.positionTempo(phases, 15, 89.9).rep, 15);
+  assert.equal(G.positionTempo(phases, 15, 90).fini, true);
+});
+
+test('fiches : chaque exercice du catalogue a des consignes détaillées et un rythme de séance', () => {
+  for (const p of S.PROGRAMMES) {
+    for (const ph of p.phases) {
+      for (const e of ph.exercices) {
+        const ref = `${p.id}/${ph.numero}/${e.id}`;
+        assert.ok(e.details?.depart && e.details.etapes?.length >= 2 && e.details.sensation && e.details.erreurs?.length, ref);
+        assert.ok(e.seance && Number.isInteger(e.seance.recupS), ref);
+        // Le dosage est lisible par la séance guidée (sauf exercice libre explicitement prévu).
+        for (const d of e.dosage.filter(Boolean)) {
+          const a = G.analyserDosage(d);
+          assert.ok(a.mode !== 'libre' || e.id === 'alphabet', `${ref} : dosage « ${d} » non reconnu`);
+          if (a.mode === 'reps' && e.seance.tempo === undefined) assert.fail(`${ref} : répétitions sans tempo défini`);
+        }
+      }
+    }
+  }
+});
+
+test('programme proposé par une IA : fiches détaillées et rythme de séance acceptés, rythme invalide refusé', () => {
+  const avec = structuredClone(PROGRAMME_IA);
+  avec.phases[1].exercices[0].details = { depart: 'Debout.', etapes: ['Penchez-vous.', 'Remontez.'], sensation: 'Étirement.', erreurs: ['Dos rond.'] };
+  avec.phases[1].exercices[0].seance = { tempo: [['Descends', 3], ['Remonte', 2]], recupS: 90 };
+  const { programme, erreurs } = B.validerProgramme(avec);
+  assert.deepEqual(erreurs, []);
+  assert.deepEqual(programme.phases[1].exercices[0].seance, { tempo: [['Descends', 3], ['Remonte', 2]], recupS: 90 });
+  assert.deepEqual(programme.phases[1].exercices[0].details.etapes, ['Penchez-vous.', 'Remontez.']);
+  avec.phases[1].exercices[0].seance = { tempo: [['Descends', 60]], recupS: 90 };
+  assert.match(B.validerProgramme(avec).erreurs.join(' | '), /seance\.tempo/);
+  avec.phases[1].exercices[0].seance = { tempo: null, recupS: 9999 };
+  assert.match(B.validerProgramme(avec).erreurs.join(' | '), /recupS/);
+  const texte = B.promptBlessure({}, { profil: {}, objectifs: [], realisees: [] }, AUJ);
+  assert.match(texte, /« details » explique précisément comment faire/);
+  assert.match(texte, /« seance » règle la séance guidée/);
+});
