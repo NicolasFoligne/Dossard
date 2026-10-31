@@ -1,5 +1,5 @@
 // Règles métier pures (sans DOM ni IndexedDB), testées par tests/regles.test.js.
-import { ecartJours, lundiDe, joursDeLaSemaine, allureMinSec, nombre } from './format.js';
+import { ecartJours, lundiDe, joursDeLaSemaine, allureMinSec, nombre, DISCIPLINES_EN_METRES, heureVersMinutes } from './format.js';
 
 export function uid() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -8,14 +8,23 @@ export function uid() {
 
 // ---------------------------------------------------------------- Référentiels
 
+// `allure` : min_km, min_100m, min_500m (allure) ou kmh (vitesse) ; null = ni distance ni allure.
+// `famille` : velo (compte comme du vélo) ou complementaire (entraînement complémentaire, rattaché à tous les objectifs).
 export const DISCIPLINES = [
-  { id: 'course', libelle: 'Course à pied', court: 'Course', icone: '🏃' },
-  { id: 'velo', libelle: 'Vélo', court: 'Vélo', icone: '🚴' },
-  { id: 'natation', libelle: 'Natation', court: 'Natation', icone: '🏊' },
-  { id: 'renforcement', libelle: 'Renforcement', court: 'Renfo', icone: '💪' },
-  { id: 'enchainement', libelle: 'Enchaînement vélo-course', court: 'Enchaînement', icone: '🔁' },
-];
-export const discipline = id => DISCIPLINES.find(d => d.id === id) ?? { id, libelle: id, court: id, icone: '•' };
+  { id: 'course', libelle: 'Course à pied', court: 'Course', icone: '🏃', allure: 'min_km' },
+  { id: 'velo', libelle: 'Vélo', court: 'Vélo', icone: '🚴', allure: 'kmh', famille: 'velo' },
+  { id: 'natation', libelle: 'Natation', court: 'Natation', icone: '🏊', allure: 'min_100m' },
+  { id: 'renforcement', libelle: 'Renforcement', court: 'Renfo', icone: '💪', allure: null, famille: 'complementaire' },
+  { id: 'enchainement', libelle: 'Enchaînement vélo-course', court: 'Enchaînement', icone: '🔁', allure: 'kmh' },
+  { id: 'home_trainer', libelle: 'Home trainer', court: 'Home trainer', icone: '🚲', allure: 'kmh', famille: 'velo' },
+  { id: 'vtt', libelle: 'VTT', court: 'VTT', icone: '🚵', allure: 'kmh', famille: 'velo' },
+  { id: 'elliptique', libelle: 'Elliptique', court: 'Elliptique', icone: '🌀', allure: 'kmh', famille: 'complementaire' },
+  { id: 'rameur', libelle: 'Rameur', court: 'Rameur', icone: '🚣', allure: 'min_500m', famille: 'complementaire' },
+  { id: 'marche', libelle: 'Marche / randonnée', court: 'Marche', icone: '🥾', allure: 'min_km', famille: 'complementaire' },
+  { id: 'mobilite', libelle: 'Mobilité / yoga / étirements', court: 'Mobilité', icone: '🧘', allure: null, famille: 'complementaire' },
+].map(d => ({ ...d, distance: d.allure === null ? null : DISCIPLINES_EN_METRES.has(d.id) ? 'm' : 'km' }));
+export const discipline = id => DISCIPLINES.find(d => d.id === id) ?? { id, libelle: id, court: id, icone: '•', allure: null, distance: null };
+const famille = f => DISCIPLINES.filter(d => d.famille === f).map(d => d.id);
 
 export const TYPES_SEANCE = [
   { id: 'endurance', libelle: 'Endurance' },
@@ -106,27 +115,72 @@ export function semainesMinimales(obj) {
   return typeObjectif(obj.sport, obj.type)?.minSemaines ?? 6;
 }
 
-// Disciplines qui alimentent un objectif (mutualisation) : le renforcement compte pour tous.
+// Disciplines qui alimentent un objectif (mutualisation) : l'entraînement complémentaire (renforcement, elliptique,
+// rameur, marche, mobilité) compte pour tous ; home trainer et VTT comptent comme du vélo (triathlon).
 export function disciplinesObjectif(obj) {
-  if (obj.sport === 'triathlon') return ['course', 'velo', 'natation', 'enchainement', 'renforcement'];
-  return ['course', 'renforcement'];
+  if (obj.sport === 'triathlon') return ['course', ...famille('velo'), 'natation', 'enchainement', ...famille('complementaire')];
+  return ['course', ...famille('complementaire')];
 }
 
-// Disciplines indispensables à la préparation (contrôle du semainier).
+// Disciplines indispensables à la préparation (contrôle du semainier). Le vélo est couvert par toute la famille vélo.
 export function disciplinesNecessaires(obj) {
   if (obj.sport === 'triathlon') return ['course', 'velo', 'natation'];
   return ['course'];
 }
+const couvertePar = d => (d === 'velo' ? famille('velo') : [d]);
 
 // ---------------------------------------------------------------- Valeurs par défaut
 
 export const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
+// Créneaux du semainier : plages horaires { debut, fin } en minutes depuis minuit, entre 5 h et 23 h, par pas de 15 min.
+export const CRENEAU_MIN = 5 * 60;
+export const CRENEAU_MAX = 23 * 60;
+export const CRENEAU_PAS = 15;
+
 export function semainierParDefaut() {
   return {
-    jours: JOURS.map(() => ({ disponible: false, dureeMaxMin: 60, disciplines: [] })),
+    jours: JOURS.map(() => ({ disponible: false, creneaux: [], dureeMaxMin: 0, disciplines: [] })),
     plafondSeances: 3,
   };
+}
+
+const sommeCreneaux = creneaux => creneaux.reduce((s, c) => s + (c.fin - c.debut), 0);
+
+// Créneau proposé pour remplacer une ancienne « durée maximale » (semainiers d'avant les créneaux) :
+// le soir à partir de 18 h si ça tient, sinon à partir de 8 h, sinon la journée entière.
+export function creneauDepuisDuree(dureeMaxMin) {
+  const d = Number(dureeMaxMin) > 0 ? Math.min(Math.round(dureeMaxMin / CRENEAU_PAS) * CRENEAU_PAS || CRENEAU_PAS, CRENEAU_MAX - CRENEAU_MIN) : null;
+  if (d === null) return { debut: CRENEAU_MIN, fin: CRENEAU_MAX };
+  const debut = 18 * 60 + d <= CRENEAU_MAX ? 18 * 60 : 8 * 60 + d <= CRENEAU_MAX ? 8 * 60 : CRENEAU_MIN;
+  return { debut, fin: debut + d };
+}
+
+// Met un semainier (éventuellement ancien) au format courant : créneaux triés, `dureeMaxMin` = durée totale des créneaux.
+export function normaliserSemainier(semainier) {
+  const s = semainier ?? semainierParDefaut();
+  return {
+    ...s,
+    jours: JOURS.map((_, i) => {
+      const j = s.jours?.[i] ?? { disponible: false, disciplines: [] };
+      const creneaux = Array.isArray(j.creneaux)
+        ? j.creneaux.map(c => ({ debut: c.debut, fin: c.fin })).sort((a, b) => a.debut - b.debut)
+        : j.disponible ? [creneauDepuisDuree(j.dureeMaxMin)] : [];
+      return { disponible: !!j.disponible, creneaux, dureeMaxMin: sommeCreneaux(creneaux), disciplines: [...(j.disciplines ?? [])] };
+    }),
+  };
+}
+
+// Contrôle d'un jour du semainier : créneaux dans la plage, au pas de 15 min, d'au moins 15 min, sans chevauchement.
+export function erreursCreneaux(creneaux) {
+  const tries = [...creneaux].sort((a, b) => a.debut - b.debut);
+  const erreurs = [];
+  tries.forEach((c, i) => {
+    if (!(Number.isInteger(c.debut) && Number.isInteger(c.fin) && c.debut >= CRENEAU_MIN && c.fin <= CRENEAU_MAX
+      && c.debut % CRENEAU_PAS === 0 && c.fin % CRENEAU_PAS === 0 && c.fin - c.debut >= CRENEAU_PAS)) erreurs.push('créneau invalide');
+    if (i > 0 && c.debut < tries[i - 1].fin) erreurs.push('créneaux qui se chevauchent');
+  });
+  return [...new Set(erreurs)];
 }
 
 export function profilParDefaut() {
@@ -237,9 +291,12 @@ function nettoyerSeanceBase(donnees) {
 export function creerPrevue(donnees, maintenant = Date.now()) {
   const base = nettoyerSeanceBase(donnees);
   exiger(base.dureeS || base.distanceKm, 'Indiquez une durée et/ou une distance.');
+  const heure = donnees.heureDebut ? heureVersMinutes(donnees.heureDebut) : null;
+  exiger(!donnees.heureDebut || heure !== null, 'Heure de début invalide.');
   return {
     id: donnees.id ?? uid(),
     ...base,
+    heureDebut: heure === null ? null : donnees.heureDebut, // « HH:MM » facultative (séances IA : toujours renseignée)
     type: donnees.type || 'endurance',
     intensite: donnees.intensite || 'facile',
     description: {
@@ -312,18 +369,24 @@ export function prochaineSeance(prevues, aujourdhui) {
 
 // Allure ou vitesse selon la discipline. Renvoie null si non calculable.
 export function allure(seance) {
-  const { dureeS, distanceKm, discipline: d } = seance;
-  if (!dureeS || !distanceKm || d === 'renforcement') return null;
-  if (d === 'course') {
+  const { dureeS, distanceKm } = seance;
+  const mode = discipline(seance.discipline).allure;
+  if (!dureeS || !distanceKm || !mode) return null;
+  if (mode === 'min_km') {
     return { valeur: dureeS / distanceKm, unite: 's/km', texte: `${allureMinSec(dureeS / distanceKm)} /km` };
   }
-  if (d === 'natation') {
+  if (mode === 'min_100m') {
     const parCent = dureeS / (distanceKm * 10);
     return { valeur: parCent, unite: 's/100m', texte: `${allureMinSec(parCent)} /100 m` };
+  }
+  if (mode === 'min_500m') {
+    const par500 = dureeS / (distanceKm * 2);
+    return { valeur: par500, unite: 's/500m', texte: `${allureMinSec(par500)} /500 m` };
   }
   const kmh = distanceKm / (dureeS / 3600);
   return { valeur: kmh, unite: 'km/h', texte: `${nombre(kmh)} km/h` };
 }
+export const estVitesse = a => a?.unite === 'km/h';
 
 // ---------------------------------------------------------------- Agrégats
 
@@ -429,7 +492,7 @@ export function alertes({ objectifs, semainier, aujourdhui, derniereSauvegarde =
     }
     const possibles = new Set(dispo.flatMap(j => j.disciplines));
     for (const o of objectifs.filter(x => x.statut === 'en_cours')) {
-      const manquantes = disciplinesNecessaires(o).filter(d => !possibles.has(d));
+      const manquantes = disciplinesNecessaires(o).filter(d => !couvertePar(d).some(x => possibles.has(x)));
       if (manquantes.length) {
         liste.push({
           code: 'semainier_disciplines', niveau: 'attention', objectifId: o.id,

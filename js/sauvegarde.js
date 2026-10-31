@@ -1,6 +1,6 @@
 // Export / import JSON (fonctions pures). La clé API vit dans le magasin « appareil »
 // et n'est jamais incluse dans l'export.
-import { profilParDefaut, semainierParDefaut, reglagesParDefaut, ErreurMetier } from './domaine.js';
+import { profilParDefaut, semainierParDefaut, normaliserSemainier, reglagesParDefaut, ErreurMetier } from './domaine.js';
 
 // 2 : ajout des suivis de blessure (blessures, bilans) · 3 : séances de soin du planning (seancesSoin).
 // Les sauvegardes aux formats 1 et 2 restent lisibles (listes absentes = vides).
@@ -62,8 +62,8 @@ export function lireImport(texte) {
   const seancesSoin = d.seancesSoin ?? [];
   exiger(seancesSoin.every(x => typeof x.date === 'string' && typeof x.blessureId === 'string' && Array.isArray(x.exercices)
     && ['a_faire', 'faite', 'ratee'].includes(x.etat)), 'séance de soin incomplète.');
-  const semainier = estObjet(d.semainier) && Array.isArray(d.semainier.jours) && d.semainier.jours.length === 7
-    ? d.semainier : semainierParDefaut();
+  const semainier = normaliserSemainier(estObjet(d.semainier) && Array.isArray(d.semainier.jours) && d.semainier.jours.length === 7
+    ? d.semainier : semainierParDefaut());
   const reglages = { ...reglagesParDefaut(), ...(estObjet(d.reglages) ? d.reglages : {}) };
   delete reglages.cleApi;
   return {

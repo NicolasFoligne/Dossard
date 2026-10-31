@@ -251,3 +251,67 @@ test('import : fichiers invalides refusés', () => {
   assert.equal(d.reglages.cleApi, undefined);
   assert.equal(d.semainier.jours.length, 7);
 });
+
+// ------------------------------------------------------------ Nouvelles disciplines et créneaux (v1.4.0)
+
+test('nouvelles disciplines : allure ou vitesse, unité de distance, rattachement selon leur nature', () => {
+  assert.equal(D.allure({ discipline: 'rameur', dureeS: 480, distanceKm: 2 }).texte, '2:00 /500 m');
+  assert.equal(D.allure({ discipline: 'marche', dureeS: 3600, distanceKm: 5 }).texte, '12:00 /km');
+  assert.equal(D.allure({ discipline: 'home_trainer', dureeS: 3600, distanceKm: 32 }).texte, '32 km/h');
+  assert.equal(D.allure({ discipline: 'vtt', dureeS: 7200, distanceKm: 30 }).texte, '15 km/h');
+  assert.equal(D.allure({ discipline: 'elliptique', dureeS: 1800, distanceKm: 5 }).texte, '10 km/h');
+  assert.equal(D.allure({ discipline: 'mobilite', dureeS: 1800, distanceKm: 1 }), null);
+  assert.equal(D.discipline('rameur').distance, 'm');
+  assert.equal(D.discipline('mobilite').distance, null);
+  assert.equal(F.distance(2, 'rameur'), '2000 m');
+
+  const marathon = D.demarrerObjectif(D.creerObjectif({ nom: 'Marathon', sport: 'course', type: 'marathon', dateEpreuve: '2027-04-11' }), AUJ);
+  const tri = D.demarrerObjectif(D.creerObjectif({ nom: 'Tri', sport: 'triathlon', type: 'M', dateEpreuve: '2027-06-01' }), AUJ);
+  const ids = d => D.objectifsRattachables(d, [marathon, tri]).sort();
+  for (const d of ['elliptique', 'rameur', 'marche', 'mobilite', 'renforcement']) assert.deepEqual(ids(d), [marathon.id, tri.id].sort(), d);
+  for (const d of ['home_trainer', 'vtt']) assert.deepEqual(ids(d), [tri.id], d);
+});
+
+test('semainier : le vélo nécessaire au triathlon est couvert par le home trainer ou le VTT', () => {
+  const s = D.normaliserSemainier(D.semainierParDefaut());
+  s.plafondSeances = 1;
+  s.jours[0] = { disponible: true, creneaux: [{ debut: 1080, fin: 1140 }], disciplines: ['course', 'natation', 'home_trainer'] };
+  const tri = D.demarrerObjectif(D.creerObjectif({ nom: 'Tri', sport: 'triathlon', type: 'M', dateEpreuve: '2027-06-01' }), AUJ);
+  assert.deepEqual(D.alertes({ objectifs: [tri], semainier: s, aujourdhui: AUJ }), []);
+  s.jours[0].disciplines = ['course', 'natation'];
+  assert.match(D.alertes({ objectifs: [tri], semainier: s, aujourdhui: AUJ })[0].message, /vélo/);
+});
+
+test('semainier : créneaux, migration de l\'ancienne durée maximale, contrôles', () => {
+  // Ancien format : durée maximale → un créneau le soir (ou le matin, ou toute la journée).
+  const ancien = D.semainierParDefaut();
+  ancien.jours[1] = { disponible: true, dureeMaxMin: 60, disciplines: ['course'] };
+  ancien.jours[2] = { disponible: true, dureeMaxMin: 360, disciplines: ['velo'] };
+  ancien.jours[3] = { disponible: true, dureeMaxMin: null, disciplines: ['velo'] };
+  ancien.jours[4] = { disponible: false, dureeMaxMin: 60, disciplines: [] };
+  for (const j of ancien.jours) delete j.creneaux;
+  const n = D.normaliserSemainier(ancien);
+  assert.deepEqual(n.jours[1].creneaux, [{ debut: 1080, fin: 1140 }]);
+  assert.deepEqual(n.jours[2].creneaux, [{ debut: 480, fin: 840 }]);
+  assert.deepEqual(n.jours[3].creneaux, [{ debut: 300, fin: 1380 }]);
+  assert.deepEqual(n.jours[4].creneaux, []);
+  assert.equal(n.jours[1].dureeMaxMin, 60);
+  // Format courant : créneaux triés, durée totale recalculée.
+  const c = D.normaliserSemainier({ ...n, jours: n.jours.map((j, i) => (i === 0 ? { disponible: true, disciplines: ['course'], creneaux: [{ debut: 1080, fin: 1170 }, { debut: 390, fin: 450 }] } : j)) });
+  assert.deepEqual(c.jours[0].creneaux, [{ debut: 390, fin: 450 }, { debut: 1080, fin: 1170 }]);
+  assert.equal(c.jours[0].dureeMaxMin, 150);
+  assert.deepEqual(D.erreursCreneaux([{ debut: 390, fin: 450 }, { debut: 1080, fin: 1170 }]), []);
+  assert.deepEqual(D.erreursCreneaux([{ debut: 390, fin: 480 }, { debut: 450, fin: 500 }]), ['créneau invalide', 'créneaux qui se chevauchent']);
+  assert.deepEqual(D.erreursCreneaux([{ debut: 240, fin: 300 }]), ['créneau invalide']); // avant 5 h
+  assert.equal(F.heureFr(390), '6 h 30');
+  assert.equal(F.heureFr('18:00'), '18 h');
+  assert.equal(F.minutesVersHeure(390), '06:30');
+  assert.equal(F.heureVersMinutes('24:00'), null);
+});
+
+test('séance prévue : heure de début facultative, contrôlée', () => {
+  const p = D.creerPrevue({ date: AUJ, discipline: 'course', dureeS: 1800, heureDebut: '06:30' });
+  assert.equal(p.heureDebut, '06:30');
+  assert.equal(D.creerPrevue({ date: AUJ, discipline: 'course', dureeS: 1800 }).heureDebut, null);
+  assert.throws(() => D.creerPrevue({ date: AUJ, discipline: 'course', dureeS: 1800, heureDebut: '25:00' }), /Heure/);
+});
