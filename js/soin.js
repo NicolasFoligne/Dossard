@@ -344,13 +344,16 @@ export function semaineDansPhase(suivi, date) {
   return Math.max(1, Math.floor(ecartJours(suivi.phaseDebut, date) / 7) + 1);
 }
 
+// Alternance fixe des exercices « un jour sur deux » : jour d'exercice le 1er jour de la phase, puis tous les 2 jours.
+export const jourAlterneActif = (suivi, date) => ecartJours(suivi.phaseDebut, date) % 2 === 0;
+
 // Exercices du jour avec leur dosage pour la semaine en cours de la phase.
-// `repos` : exercice « un jour sur deux » déjà fait la veille.
-export function seanceDuJour(suivi, bilans, date) {
+// `repos` : exercice « un jour sur deux » dont ce n'est pas le jour (alternance fixe depuis le début de la phase).
+export function seanceDuJour(suivi, date) {
   const phase = phaseDe(suivi);
   if (!phase) return null;
   const semaine = semaineDansPhase(suivi, date);
-  const hier = bilanDuJour(suivi, bilans, ajouterJours(date, -1));
+  const actif = jourAlterneActif(suivi, date);
   const exercices = phase.exercices.map(e => {
     const dosage = e.dosage[Math.min(semaine, e.dosage.length) - 1];
     if (dosage === null) return null;
@@ -359,7 +362,7 @@ export function seanceDuJour(suivi, bilans, date) {
       nom: avecCote(e.nom, suivi.cote),
       dosage: avecCote(dosage, suivi.cote),
       consignes: e.consignes.map(c => avecCote(c, suivi.cote)),
-      repos: !!(e.alterne && hier?.exercices?.includes(e.id)),
+      repos: e.alterne && !actif,
     };
   }).filter(Boolean);
   return { phase, semaine, exercices };
@@ -525,4 +528,87 @@ export function planAJour(meta, suivis) {
   if (!meta || !actifs.length) return true;
   const phases = new Map((meta.soin ?? []).map(x => [x.id, x.phase]));
   return actifs.every(s => phases.get(s.id) === s.phase);
+}
+
+// ------------------------------------------------------------ Séances de soin du planning
+
+// Les séances de soin vivent dans leur propre magasin (`seancesSoin`) : elles ne dépendent pas du semainier,
+// ne comptent pas dans le plafond et ne sont jamais vues par le plan IA ni par les compteurs d'entraînement.
+export const ETATS_SOIN = ['a_faire', 'faite', 'ratee'];
+
+// Exercices obligatoires du jour (ni facultatifs, ni au repos). Liste vide : pas de séance ce jour-là.
+export function exercicesObligatoires(suivi, date) {
+  const seance = seanceDuJour(suivi, date);
+  return (seance?.exercices ?? []).filter(e => !e.facultatif && !e.repos).map(e => ({ id: e.id, nom: e.nom, dosage: e.dosage }));
+}
+
+// Dernier jour planifié : fin prévue de la phase en cours (durée maximale), au moins 7 jours à partir d'aujourd'hui.
+export function finPlanificationSoin(suivi, aujourdhui) {
+  const phase = phaseDe(suivi);
+  const finPrevue = ajouterJours(suivi.phaseDebut, phase.dureeMaxSem * 7 - 1);
+  const minimum = ajouterJours(aujourdhui, 6);
+  return finPrevue < minimum ? minimum : finPrevue;
+}
+
+// Tous les exercices de la séance sont-ils cochés dans le bilan ?
+export const bilanComplet = (seance, bilan) => !!bilan && seance.exercices.every(e => bilan.exercices?.includes(e.id));
+
+// Séances de soin attendues d'aujourd'hui à la fin de la phase en cours, pour chaque suivi en cours.
+export function seancesAttendues(suivis, aujourdhui) {
+  const attendues = [];
+  for (const s of suivisActifs(suivis)) {
+    const fin = finPlanificationSoin(s, aujourdhui);
+    for (let date = aujourdhui; date <= fin; date = ajouterJours(date, 1)) {
+      const exercices = exercicesObligatoires(s, date);
+      if (exercices.length) attendues.push({ blessureId: s.id, date, phase: s.phase, semaine: semaineDansPhase(s, date), exercices });
+    }
+  }
+  return attendues;
+}
+
+const memeContenu = (a, b) => a.phase === b.phase && JSON.stringify(a.exercices) === JSON.stringify(b.exercices);
+
+// Met le planning de soin en accord avec les suivis : à appeler à l'ouverture et après chaque changement de suivi
+// (création, modification, changement de phase, retour en arrière, fin, import).
+// Seules les séances futures (aujourd'hui compris) « à faire » sont créées, mises à jour ou supprimées ;
+// les séances passées, faites ou ratées sont conservées. Une séance créée un jour dont le bilan coche déjà
+// tous les exercices naît « faite ».
+export function reconcilierSoin(suivis, seances, bilans, aujourdhui, maintenant = Date.now()) {
+  const cle = x => `${x.blessureId}|${x.date}`;
+  const existantes = new Map(seances.filter(x => x.date >= aujourdhui).map(x => [cle(x), x]));
+  const aMettre = [];
+  const vues = new Set();
+  for (const a of seancesAttendues(suivis, aujourdhui)) {
+    const k = cle(a);
+    vues.add(k);
+    const x = existantes.get(k);
+    if (!x) {
+      const bilan = bilans.find(b => b.blessureId === a.blessureId && b.date === a.date);
+      aMettre.push({ id: uid(), ...a, etat: bilanComplet(a, bilan) ? 'faite' : 'a_faire', creeLe: maintenant, modifieLe: maintenant });
+    } else if (x.etat === 'a_faire' && !memeContenu(x, a)) {
+      aMettre.push({ ...x, ...a, modifieLe: maintenant });
+    }
+  }
+  const aSupprimer = [...existantes].filter(([k, x]) => !vues.has(k) && x.etat === 'a_faire').map(([, x]) => x.id);
+  return { aMettre, aSupprimer };
+}
+
+// Bilan enregistré : la séance du même jour passe « faite » si tous ses exercices sont cochés,
+// et revient « à faire » si elle était faite et qu'un exercice a été décoché. Renvoie le nouvel état.
+export function etatApresBilan(seance, bilan) {
+  if (bilanComplet(seance, bilan)) return 'faite';
+  return seance.etat === 'faite' ? 'a_faire' : seance.etat;
+}
+
+// Changement d'état de la séance : exercices du bilan du jour après propagation
+// (« faite » coche les exercices de la séance, « à faire » ou « ratée » les décoche).
+export function exercicesBilanApresEtat(bilan, seance, etat) {
+  const ids = seance.exercices.map(e => e.id);
+  const actuels = bilan.exercices ?? [];
+  return etat === 'faite' ? [...new Set([...actuels, ...ids])] : actuels.filter(id => !ids.includes(id));
+}
+
+// Compteur « Soin » d'une liste de séances (accueil).
+export function compteSoin(seances) {
+  return { nb: seances.length, faites: seances.filter(x => x.etat === 'faite').length };
 }
