@@ -6,6 +6,7 @@ import { ouvrirPrevue, ouvrirDetailPrevue, libellePrevue } from './formulaires.j
 import { ouvrirPlanIa } from './planIa.js';
 import { phaseDuJour } from '../ia.js';
 import * as S from '../soin.js';
+import { ouvrirSeanceSoin, libelleSeanceSoin, LIBELLES_ETAT_SOIN } from './soin.js';
 
 // Seules les premières semaines sont affichées d'emblée (un plan complet peut en compter plus de 20).
 const SEMAINES_VISIBLES = 4;
@@ -17,8 +18,10 @@ export function ecranPlan() {
   const auj = F.aujourdhui();
   const lundi = F.lundiDe(auj);
   const trier = (a, b) => a.date.localeCompare(b.date) || a.creeLe - b.creeLe;
-  const enRetard = M.etat.prevues.filter(p => p.date < auj && p.etat === 'a_faire').sort(trier);
-  const avenir = M.etat.prevues.filter(p => p.date >= lundi).sort(trier);
+  // Séances d'entraînement et séances de soin (repérées par `blessureId`), affichées ensemble.
+  const toutes = [...M.etat.prevues, ...M.etat.seancesSoin];
+  const enRetard = toutes.filter(p => p.date < auj && p.etat === 'a_faire').sort(trier);
+  const avenir = toutes.filter(p => p.date >= lundi).sort(trier);
 
   const semaines = new Map();
   for (const p of avenir) {
@@ -27,7 +30,14 @@ export function ecranPlan() {
     semaines.get(l).push(p);
   }
 
-  const ligne = p => h('button.ligne-seance', { type: 'button', class: `etat-${p.etat}`, onclick: () => ouvrirDetailPrevue(p.id) },
+  const ligneSoin = x => h('button.ligne-seance.ligne-soin', { type: 'button', class: `etat-${x.etat}`, onclick: () => ouvrirSeanceSoin(x.id) },
+    h('span.ligne-icone.icone-soin', '✚'),
+    h('span.ligne-texte',
+      h('strong', F.capitaliser(F.dateCourte(x.date))),
+      h('span', `Soin · ${libelleSeanceSoin(x)}`)),
+    h('span.etiquette', { class: `etiquette-${x.etat}` }, LIBELLES_ETAT_SOIN[x.etat]));
+
+  const ligne = p => p.blessureId ? ligneSoin(p) : h('button.ligne-seance', { type: 'button', class: `etat-${p.etat}`, onclick: () => ouvrirDetailPrevue(p.id) },
     h('span.ligne-icone', D.discipline(p.discipline).icone),
     h('span.ligne-texte',
       h('strong', F.capitaliser(F.dateCourte(p.date))),

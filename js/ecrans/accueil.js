@@ -4,7 +4,7 @@ import * as F from '../format.js';
 import { h } from '../ui.js';
 import { ouvrirSaisieRealisee, ouvrirDetailPrevue, libellePrevue } from './formulaires.js';
 import { phaseDuJour } from '../ia.js';
-import { carteSoinAccueil } from './soin.js';
+import { carteSoinAccueil, ouvrirSeanceSoin, libelleSeanceSoin, LIBELLES_ETAT_SOIN } from './soin.js';
 import * as S from '../soin.js';
 
 export function alertesCourantes() {
@@ -27,8 +27,10 @@ export function ecranAccueil() {
   const prochaine = D.prochaineSeance(M.etat.prevues, auj);
   const phase = phaseDuJour(M.etat.plan, auj);
   const enCours = M.etat.objectifs.filter(o => o.statut === 'en_cours').sort((a, b) => a.dateEpreuve.localeCompare(b.dateEpreuve));
-  // Jours de la semaine où des exercices de soin ont été faits (suivi de blessure).
-  const joursSoin = new Set(M.etat.bilans.filter(b => b.exercices?.length).map(b => b.date));
+  // Séances de soin de la semaine : affichées et comptées à part de l'entraînement.
+  const fin = F.ajouterJours(sem.lundi, 6);
+  const soinSemaine = M.etat.seancesSoin.filter(x => x.date >= sem.lundi && x.date <= fin);
+  const soin = S.compteSoin(soinSemaine);
 
   return h('div.ecran',
     h('header.entete-ecran', h('h1', 'Dossard'), h('p.sous-titre', F.capitaliser(F.dateLongue(auj)))),
@@ -54,10 +56,14 @@ export function ecranAccueil() {
             type: 'button', 'aria-label': `Réalisée : ${D.discipline(r.discipline).libelle}`,
             onclick: () => ouvrirSaisieRealisee({ id: r.id }),
           }, D.discipline(r.discipline).icone)),
-          joursSoin.has(j.date) && h('a.pastille.pastille-soin', { href: '#/soin', 'aria-label': 'Exercices de soin faits', title: 'Exercices de soin faits' }, '✚'))))),
+          soinSemaine.filter(x => x.date === j.date).map(x => h('button.pastille.pastille-soin', {
+            type: 'button', class: `etat-${x.etat}`, title: libelleSeanceSoin(x),
+            'aria-label': `Soin (${LIBELLES_ETAT_SOIN[x.etat].toLowerCase()}) : ${libelleSeanceSoin(x)}`, onclick: () => ouvrirSeanceSoin(x.id),
+          }, x.etat === 'faite' ? '✓' : x.etat === 'ratee' ? '✕' : '✚')))))),
       h('div.bilan-semaine',
         h('div', h('span.bilan-libelle', 'Prévu'), h('strong', `${sem.prevu.nb} séance${sem.prevu.nb > 1 ? 's' : ''}`), sem.prevu.dureeS > 0 && h('span', F.duree(sem.prevu.dureeS))),
-        h('div', h('span.bilan-libelle', 'Réalisé'), h('strong', `${sem.realise.nb} séance${sem.realise.nb > 1 ? 's' : ''}`), sem.realise.dureeS > 0 && h('span', F.duree(sem.realise.dureeS))))),
+        h('div', h('span.bilan-libelle', 'Réalisé'), h('strong', `${sem.realise.nb} séance${sem.realise.nb > 1 ? 's' : ''}`), sem.realise.dureeS > 0 && h('span', F.duree(sem.realise.dureeS))),
+        soin.nb > 0 && h('div.bilan-soin', h('span.bilan-libelle', 'Soin'), h('strong', `${soin.faites}/${soin.nb} faite${soin.faites > 1 ? 's' : ''}`), h('span', 'hors plafond')))),
 
     h('section.carte',
       h('h2', 'Prochaine séance'),

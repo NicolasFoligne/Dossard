@@ -27,6 +27,45 @@ function listeAlertes(alertes) {
     h('span.alerte-icone', a.niveau === 'danger' ? '⛔' : '⚠️'), h('span', a.message))));
 }
 
+// Exercices cochés pour la journée : ceux du bilan, plus ceux d'une séance de soin marquée « faite ».
+function exercicesFaits(s, date) {
+  const bilan = S.bilanDuJour(s, M.etat.bilans, date);
+  const seance = M.etat.seancesSoin.find(x => x.blessureId === s.id && x.date === date);
+  return new Set([...(bilan?.exercices ?? []), ...(seance?.etat === 'faite' ? seance.exercices.map(e => e.id) : [])]);
+}
+
+export const LIBELLES_ETAT_SOIN = { a_faire: 'À faire', faite: 'Faite', ratee: 'Ratée' };
+
+// Libellé court d'une séance de soin (planning).
+export function libelleSeanceSoin(x) {
+  const s = M.suivi(x.blessureId);
+  return `${s ? S.nomSuivi(s) : 'Soin'} · ${x.exercices.length} exercice${x.exercices.length > 1 ? 's' : ''}`;
+}
+
+// Détail d'une séance de soin : exercices du jour et changement d'état (reporté dans le bilan du jour).
+export function ouvrirSeanceSoin(id) {
+  const x = M.seanceSoin(id);
+  if (!x) return;
+  const s = M.suivi(x.blessureId);
+  const phase = s ? S.phaseDe(s, x.phase) : null;
+  const changer = (etat, fermer, message) => async () => {
+    if (await U.tenter(async () => { await M.changerEtatSeanceSoin(x.id, etat); return true; })) { fermer(); U.toast(message); }
+  };
+  U.ouvrirFeuille('Séance de soin', fermer => h('div.detail.detail-soin',
+    h('p.detail-date', F.dateLongue(x.date)),
+    h('p.detail-titre', s ? S.nomSuivi(s) : 'Soin'),
+    h('p.detail-meta', [phase && `Phase ${phase.numero} « ${phase.nom} »`, `semaine ${x.semaine}`, `État : ${LIBELLES_ETAT_SOIN[x.etat]}`].filter(Boolean).join(' · ')),
+    h('ul.soin-exercices', x.exercices.map(e => h('li', { class: x.etat === 'faite' ? 'fait' : '' },
+      h('span.soin-coche', { 'aria-hidden': 'true' }, x.etat === 'faite' ? '✓' : '○'),
+      h('span', h('strong', e.nom), h('span.soin-dosage', e.dosage))))),
+    h('p.aide', 'Séance obligatoire, en plus de l\'entraînement : elle ne dépend pas du semainier. Passer la séance à « Faite » coche ses exercices dans le bilan du jour.'),
+    h('div.actions-formulaire',
+      x.etat !== 'faite' && h('button.bouton.large.bouton-soin', { type: 'button', onclick: changer('faite', fermer, 'Séance de soin faite ✓') }, 'Marquer faite'),
+      x.etat === 'a_faire' && h('button.bouton.secondaire', { type: 'button', onclick: changer('ratee', fermer, 'Séance de soin marquée ratée') }, 'Marquer ratée'),
+      x.etat !== 'a_faire' && h('button.bouton.secondaire', { type: 'button', onclick: changer('a_faire', fermer, 'Séance de soin remise à faire') }, 'Remettre à faire'),
+      s && h('a.bouton.secondaire', { href: `#/soin/${s.id}` }, 'Voir le suivi'))));
+}
+
 // ------------------------------------------------------------ Carte de l'accueil
 
 export function carteSoinAccueil() {
@@ -37,9 +76,9 @@ export function carteSoinAccueil() {
   }
   return actifs.map(s => {
     const bilan = S.bilanDuJour(s, M.etat.bilans, auj);
-    const seance = S.seanceDuJour(s, M.etat.bilans, auj);
+    const seance = S.seanceDuJour(s, auj);
     const passage = S.criteresPassage(s, M.etat.bilans, auj);
-    const faits = new Set(bilan?.exercices ?? []);
+    const faits = exercicesFaits(s, auj);
     return h('section.carte.carte-soin', { 'aria-label': `Suivi ${S.nomSuivi(s)}` },
       h('a.soin-tete', { href: `#/soin/${s.id}` },
         h('span.soin-icone', { 'aria-hidden': 'true' }, '🩹'),
@@ -50,7 +89,7 @@ export function carteSoinAccueil() {
         h('span.alerte-icone', '⚠️'), h('span', `Le plan d'entraînement ne tient pas compte de la phase ${s.phase} : recalculez-le.`)),
       h('ul.soin-exercices', seance.exercices.filter(e => !e.facultatif).map(e => h('li', { class: faits.has(e.id) ? 'fait' : e.repos ? 'repos' : '' },
         h('span.soin-coche', { 'aria-hidden': 'true' }, faits.has(e.id) ? '✓' : e.repos ? '–' : '○'),
-        h('span', h('strong', e.nom), h('span.soin-dosage', e.repos && !faits.has(e.id) ? 'Repos aujourd\'hui (fait hier)' : e.dosage))))),
+        h('span', h('strong', e.nom), h('span.soin-dosage', e.repos && !faits.has(e.id) ? 'Repos aujourd\'hui (un jour sur deux)' : e.dosage))))),
       passage.pret && h('a.soin-pret', { href: `#/soin/${s.id}` },
         passage.suivante ? `✓ Critères remplis : passer en phase ${passage.suivante.numero} ?` : '✓ Critères remplis : fin du programme ?'),
       bilan
@@ -98,9 +137,9 @@ function ecranSuivi(s) {
   const enCours = s.statut === 'en_cours';
   const bilans = S.bilansDe(s, M.etat.bilans);
   const bilan = S.bilanDuJour(s, M.etat.bilans, auj);
-  const seance = S.seanceDuJour(s, M.etat.bilans, auj);
+  const seance = S.seanceDuJour(s, auj);
   const passage = S.criteresPassage(s, M.etat.bilans, auj);
-  const faits = new Set(bilan?.exercices ?? []);
+  const faits = exercicesFaits(s, auj);
   const phase = S.phaseDe(s);
 
   const progression = h('div.soin-phases', { role: 'img', 'aria-label': `Phase ${s.phase} sur 3` },
@@ -126,7 +165,7 @@ function ecranSuivi(s) {
         h('summary',
           h('span.soin-coche', { 'aria-hidden': 'true' }, faits.has(e.id) ? '✓' : e.repos ? '–' : '○'),
           h('span.ligne-texte', h('strong', e.nom),
-            h('span', e.repos && !faits.has(e.id) ? `Repos aujourd'hui (fait hier) · ${e.frequence}` : `${e.dosage} · ${e.frequence}`))),
+            h('span', e.repos && !faits.has(e.id) ? `Repos aujourd'hui · ${e.frequence}` : `${e.dosage} · ${e.frequence}`))),
         h('div.exercice-corps',
           h('p.aide', `Cible : ${e.cible}`),
           h('ul', e.consignes.map(c => h('li', c)))))),
@@ -340,8 +379,10 @@ export function ouvrirBilan({ suiviId, id = null, date = null }) {
 
     const dessinerExercices = () => {
       const d = U.valeur(form, 'date') || depart.date;
-      const seance = S.seanceDuJour(s, M.etat.bilans, d);
-      const coches = existant ? depart.exercices : [...zoneExercices.querySelectorAll('input:checked')].map(i => i.value);
+      const seance = S.seanceDuJour(s, d);
+      // Nouveau bilan : on part des exercices cochés à l'écran, ou de ceux d'une séance de soin déjà marquée « faite ».
+      const saisis = [...zoneExercices.querySelectorAll('input:checked')].map(i => i.value);
+      const coches = existant ? depart.exercices : saisis.length ? saisis : [...exercicesFaits(s, d)];
       U.vider(zoneExercices, h('fieldset.champ', h('legend.champ-libelle', 'Exercices faits'),
         U.puces('exercices', seance.exercices.map(e => ({ id: e.id, libelle: e.nom })), coches)));
     };
