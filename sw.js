@@ -1,7 +1,7 @@
 // Service worker de Dossard : application disponible hors ligne.
 // VERSION est à incrémenter à chaque livraison (identique à js/version.js) :
 // le changement de ce fichier déclenche la mise à jour et le message « Nouvelle version disponible ».
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 const CACHE = `dossard-${VERSION}`;
 
 const FICHIERS = [

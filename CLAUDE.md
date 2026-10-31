@@ -22,13 +22,13 @@ uniquement depuis son téléphone.
 ## 2. Modèle de données
 
 - **Profil** : niveau, allure habituelle en course, performances récentes, antécédents de blessures, matériel (montre GPS, vélo, accès piscine), remarques.
-- **Semainier** : pour chaque jour, disponible oui/non, durée maximale, disciplines possibles ce jour-là. Plus un plafond de séances par semaine.
+- **Semainier** : pour chaque jour, disponible oui/non, créneaux horaires disponibles (v1.4.0 ; remplacent la durée maximale), disciplines possibles ce jour-là. Plus un plafond de séances par semaine.
 - **Objectif** : nom, sport (course ou triathlon), type, distance et dénivelé (modifiables), date de l'épreuve (= date de fin, obligatoire), temps visé (facultatif), statut, date de démarrage, résultat.
   - Types course : 5 km, 10 km, semi-marathon, marathon, trail (distance et dénivelé libres), autre.
   - Types triathlon : XS, S, M, L, XL, XXL, distances standard de la Fédération française de triathlon préremplies et modifiables.
 - **Séance prévue** : date, discipline, type (endurance, fractionné, sortie longue, technique, enchaînement…), durée et/ou distance, intensité, description (échauffement, corps de séance, retour au calme), objectifs rattachés, état (à faire, faite, ratée).
 - **Séance réalisée** : date, discipline, durée, distance, allure ou vitesse calculée automatiquement, ressenti de 1 à 5, notes, lien facultatif vers une séance prévue.
-- **Disciplines** : course, vélo, natation, renforcement, enchaînement vélo-course.
+- **Disciplines** : course, vélo, natation, renforcement, enchaînement vélo-course ; depuis la v1.4.0 : home trainer, VTT, elliptique, rameur, marche / randonnée, mobilité / yoga / étirements.
 
 ## 3. Règles métier
 
@@ -110,7 +110,8 @@ _(Section tenue à jour au fil des sessions.)_
 - **Calendrier envoyé** : l'application calcule elle-même les créneaux autorisés (date, jour, durée maximale restante,
   disciplines possibles) et le plafond restant par semaine, déduction faite des séances conservées et réalisées.
   L'IA ne choisit que parmi ces créneaux ; la réponse est rejetée sinon.
-- **Validation stricte** avant aperçu : dates du calendrier, discipline possible ce jour, somme des durées ≤ durée max,
+- **Validation stricte** avant aperçu : dates du calendrier, discipline possible ce jour, heure de début dans un créneau (v1.4.0),
+  pas de chevauchement dans la journée, somme des durées ≤ durée disponible,
   nombre de séances ≤ plafond restant, énumérations (discipline, type, intensité), durée entière positive.
   Les `objectifIds` sont restreints aux objectifs en cours compatibles avec la discipline (à défaut : tous les compatibles).
 - **Points d'attention** (non bloquants, affichés dans l'aperçu) : hausse de volume hebdomadaire > 15 %, moins de 70 % du volume en facile.
@@ -174,6 +175,28 @@ _(Section tenue à jour au fil des sessions.)_
   (une pastille par séance, remplace l'ancienne pastille ✚ : pointillés = à faire, pleine ✓ = faite, rouge ✕ = ratée),
   compteur « Soin » (faites / prévues de la semaine, « hors plafond ») sous Prévu / Réalisé. Détail d'une séance : feuille
   « Séance de soin » (exercices, dosage, Marquer faite / ratée, Remettre à faire, Voir le suivi).
+
+### Créneaux horaires et nouvelles disciplines (version 1.4.0)
+
+- **Créneaux du semainier** : chaque jour disponible a un ou plusieurs créneaux `{ debut, fin }` en minutes depuis minuit,
+  entre 5 h et 23 h, au pas de 15 min, d'au moins 15 min, sans chevauchement (`erreursCreneaux`). Saisie par deux curseurs
+  (début, fin) sur une ligne de temps par créneau ; un curseur qui rattrape l'autre le pousse ; « ＋ Ajouter un créneau » propose
+  la première heure libre parmi 18 h, 7 h, 12 h ; activer un jour propose 18 h – 19 h. `dureeMaxMin` est conservé et vaut la durée
+  totale des créneaux (`normaliserSemainier`).
+- **Migration** des semainiers d'avant la v1.4.0 (chargement, import) : l'ancienne durée maximale devient un créneau à 18 h
+  s'il tient avant 23 h, sinon à 8 h, sinon de 5 h à 23 h (durée vide = journée entière).
+- **Plan IA** : le calendrier envoyé donne les créneaux restants de chaque jour (« HH:MM ») ; ceux d'aujourd'hui déjà passés
+  sont retirés (au quart d'heure suivant l'heure de génération) ; une séance conservée avec heure libère son intervalle, une séance
+  sans heure (ou réalisée) réduit seulement la durée disponible. Chaque séance générée a une `heureDebut` obligatoire, doit tenir
+  entièrement dans un créneau et ne pas chevaucher une autre séance du jour (validation stricte). L'heure s'affiche dans le planning.
+- **Séance prévue** : `heureDebut` facultative (« HH:MM ») pour les séances ajoutées à la main.
+- **Nouvelles disciplines** (référentiel `DISCIPLINES` de `js/domaine.js`, avec `allure` et `famille`) :
+  home trainer et VTT (famille vélo : vitesse en km/h, rattachés aux objectifs triathlon, couvrent le vélo nécessaire au triathlon
+  dans le contrôle du semainier) ; elliptique (km/h), rameur (distance en mètres, allure /500 m), marche / randonnée (allure /km),
+  mobilité / yoga / étirements (ni distance ni allure) — entraînement complémentaire rattaché à tous les objectifs, comme le renforcement.
+  Distances en mètres : natation et rameur (`DISCIPLINES_EN_METRES` de `js/format.js`).
+- **Autoremplissage** : les formulaires et zones de texte ont `autocomplete="off"` (et les attributs d'exclusion des gestionnaires
+  de mots de passe), pour éviter les suggestions d'adresse e-mail dans les champs libres (ex. antécédents de blessures).
 
 ### Architecture
 
