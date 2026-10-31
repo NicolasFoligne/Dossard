@@ -4,6 +4,7 @@
 import * as D from './domaine.js';
 import { CHAMPS_DOULEUR, PROGRAMMES } from './soin.js';
 import { ajouterJours, lundiDe } from './format.js';
+import { exercice, listePourIa } from './exercices.js';
 
 // ------------------------------------------------------------ Description de la blessure (formulaire)
 
@@ -26,7 +27,8 @@ const liste = l => (l?.length ? l.join(', ') : 'non renseigné');
 
 // ------------------------------------------------------------ Format attendu du programme
 
-// Exemple abrégé donné à l'IA (une phase et un exercice ; le vrai programme en compte davantage).
+// Exemple abrégé donné à l'IA (une phase, un exercice de la bibliothèque et un exercice hors bibliothèque ;
+// le vrai programme en compte davantage).
 const EXEMPLE = {
   libelle: 'Tendinopathie d\'Achille (corps du tendon)',
   court: 'Tendon d\'Achille',
@@ -43,16 +45,24 @@ const EXEMPLE = {
       id: 'iso_debout', nom: 'Isométrie debout', cible: 'Mollet', frequence: 'Tous les jours', alterne: false, facultatif: false,
       consignes: ['Montez à mi-hauteur sur la pointe du pied et tenez 45 s.'],
       dosage: ['Sur les 2 pieds · 5 × 45 s', 'Jambe {cote} seule · 5 × 45 s'],
+      fiche: 'iso_mollet',
+    }, {
+      id: 'marche_talons', nom: 'Marche sur les talons', cible: 'Releveurs du pied', frequence: 'Un jour sur deux', alterne: true, facultatif: false,
+      consignes: ['Marchez lentement sur les talons, pointes de pied relevées.'],
+      dosage: [null, '3 × 30 s'],
       details: {
-        depart: 'Debout face à un mur, mains posées à plat pour l\'équilibre, genou tendu.',
-        etapes: ['Montez à mi-hauteur sur la pointe des pieds.', 'Tenez immobile pendant la durée indiquée.', 'Redescendez doucement et récupérez.'],
-        respiration: 'Respirez calmement, sans bloquer.',
-        sensation: 'Effort franc du mollet ; douleur du tendon ≤ 3/10.',
-        erreurs: ['Monter trop haut.', 'Plier le genou.'],
-        facile: 'Tenue de 30 s.',
-        difficile: 'Sur une jambe avec un sac lesté.',
+        objectif: 'Renforcer les muscles de l\'avant du tibia.',
+        materiel: ['Un couloir'],
+        depart: 'Debout, pieds parallèles, pointes relevées, en appui sur les talons.',
+        etapes: ['Avancez à petits pas sur les talons.', 'Gardez les pointes relevées tout le long.', 'Revenez à pas normaux pour récupérer.'],
+        respiration: 'Respirez librement.',
+        sensation: 'Fatigue sur le devant du tibia, effort modéré (5 à 6 sur 10).',
+        erreurs: ['Laisser retomber les pointes.', 'Se pencher en arrière.'],
+        adaptation: 'Douleur au-dessus de 3/10 : pas plus courts, durée réduite de moitié.',
+        facile: 'Sur place, en levant les pointes alternativement.',
+        difficile: 'Avec un sac à dos lesté.',
       },
-      seance: { tempo: null, recupS: 120, libelleTenue: 'Tenez' },
+      seance: { tempo: null, recupS: 45, libelleTenue: 'Marchez', motTenue: 'marche' },
     }],
     course: {
       texte: 'Footing facile de 30 min au plus si la douleur reste ≤ 4/10.',
@@ -73,8 +83,9 @@ const REGLES_FORMAT = `Règles du JSON (il sera vérifié automatiquement par l'
 - Exercice : « id » court en minuscules sans espace ni accent (unique dans la phase) ; « alterne » : true si l'exercice se fait un jour sur deux ; « facultatif » : true s'il est optionnel ;
   « dosage » : une entrée par semaine de la phase (la dernière se répète ensuite), null si l'exercice n'est pas encore introduit cette semaine-là.
 - Écris le dosage sous la forme « séries × répétitions » (« 3 × 15 »), « séries × durée » (« 5 × 45 s », « 3 × 1 min »), « séries × répétitions fois durée » (« 3 × 10 fois 10 s ») ou une durée (« 2 min ») : l'application s'en sert pour guider la séance (minuteur, tempo, compteur). Ajoute « par côté » si l'exercice se fait des deux côtés.
-- Pour chaque exercice, « details » explique précisément comment faire : « depart » (position de départ), « etapes » (2 à 6 étapes), « respiration », « sensation » (ce qu'on doit ressentir, douleur tolérée), « erreurs » (erreurs fréquentes), « facile » et « difficile » (variantes).
-- « seance » règle la séance guidée : « tempo » liste les phases d'une répétition [libellé, secondes] (ex. [["Monte", 3], ["Descends", 3]]), null si l'on compte soi-même (sauts) ; « recupS » : récupération entre deux séries, en secondes ; « libelleTenue » : consigne annoncée pendant une tenue (« Tenez », « Poussez »…).
+- Choisis les exercices en priorité dans la bibliothèque de l'application (liste ci-dessous) : mets son identifiant dans « fiche ». La fiche détaillée, le schéma et le rythme de la séance guidée viennent alors de l'application ; « details » est inutile et « seance » facultatif (il ne sert qu'à changer le rythme).
+- Pour un exercice absent de la bibliothèque, ne mets pas « fiche » et décris-le entièrement dans « details » (tous les champs obligatoires) : « objectif », « materiel » (liste, vide si aucun), « depart » (position de départ), « etapes » (2 à 6 étapes), « respiration », « sensation » (ce qu'on doit ressentir, intensité, douleur tolérée), « erreurs » (erreurs fréquentes), « adaptation » (que faire si douleur), « facile » et « difficile » (variantes) ; et donne son « seance ».
+- « seance » règle la séance guidée : « tempo » liste les phases d'une répétition [libellé, secondes] (ex. [["Monte", 3], ["Descends", 3]]), null si l'on compte soi-même (sauts) ; « recupS » : repos entre deux séries, en secondes (60 pour un exercice isométrique) ; « libelleTenue » : consigne affichée pendant une tenue (« Tenez », « Poussez »…) ; « motTenue » : mot annoncé par la voix (« Série 2 sur 5, contraction 30 secondes »).
 - Écris « {cote} » là où il faut nommer le côté atteint (« Jambe {cote} seule ») : l'application le remplace par gauche ou droite.
 - Course : « autorisee » vaut true, false ou "si_douleur_ok" (seulement si la dernière douleur de course des 7 derniers jours est ≤ 4/10) ;
   « intensites » parmi ${D.INTENSITES.map(i => `"${i.id}"`).join(', ')} ; « types » parmi ${D.TYPES_SEANCE.map(t => `"${t.id}"`).join(', ')} ;
@@ -116,6 +127,9 @@ ${JSON.stringify(EXEMPLE, null, 1)}
 
 ${REGLES_FORMAT}
 
+Bibliothèque des exercices de l'application (identifiant : nom — objectif) :
+${listePourIa()}
+
 --- Ma blessure ---
 Zone : ${d.zone || 'non renseignée'} · côté : ${d.cote || 'non renseigné'}
 Depuis le : ${d.debut || 'non renseigné'} · apparition : ${d.apparition || 'non renseignée'}
@@ -144,32 +158,56 @@ const entier = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const ID = /^[a-z0-9_]{1,40}$/;
 const CHAMPS = CHAMPS_DOULEUR.map(c => c.id);
 
-// Consignes détaillées d'un exercice (toutes facultatives).
-function lireDetails(d) {
-  return {
-    depart: texte(d.depart), etapes: textes(d.etapes, 8), respiration: texte(d.respiration), sensation: texte(d.sensation),
-    erreurs: textes(d.erreurs, 6), facile: texte(d.facile, 200), difficile: texte(d.difficile, 200),
+// Champs de la fiche d'un exercice hors bibliothèque, obligatoires pour un programme collé (`CHAMPS_FICHE`).
+const CHAMPS_FICHE = ['objectif', 'materiel', 'depart', 'etapes', 'sensation', 'erreurs', 'adaptation'];
+
+// Fiche détaillée d'un exercice (`details`). Avec `exiger`, les champs de CHAMPS_FICHE sont obligatoires.
+function lireDetails(d, ref, erreurs, exiger) {
+  if (d === undefined || d === null) {
+    if (exiger) erreurs.push(`${ref} : exercice hors bibliothèque — « details » obligatoire (${CHAMPS_FICHE.join(', ')}).`);
+    return null;
+  }
+  if (typeof d !== 'object' || Array.isArray(d)) { erreurs.push(`${ref} : « details » doit être un objet.`); return null; }
+  const fiche = {
+    objectif: texte(d.objectif, 200), materiel: textes(d.materiel, 6), depart: texte(d.depart), etapes: textes(d.etapes, 8),
+    respiration: texte(d.respiration), sensation: texte(d.sensation), erreurs: textes(d.erreurs, 6), adaptation: texte(d.adaptation),
+    facile: texte(d.facile, 200), difficile: texte(d.difficile, 200),
   };
+  if (exiger) {
+    const manquants = CHAMPS_FICHE.filter(c => (c === 'materiel' ? !Array.isArray(d.materiel) : !fiche[c].length));
+    if (manquants.length) erreurs.push(`${ref} : « details » incomplet, il manque ${manquants.map(c => `« ${c} »`).join(', ')}.`);
+    if (fiche.etapes.length && fiche.etapes.length < 2) erreurs.push(`${ref} : « details.etapes » : au moins 2 étapes.`);
+  }
+  return fiche;
 }
 
-// Rythme de la séance guidée : tempo (phases [libellé, secondes] ou null), récupération, consigne de tenue.
+// Rythme de la séance guidée : tempo (phases [libellé, secondes] ou null), repos, consigne de tenue, mot annoncé.
+// Seuls les champs fournis sont gardés : pour un exercice de la bibliothèque, ils remplacent ceux de sa fiche.
 function lireSeance(s, ref, erreurs) {
   if (s === undefined || s === null) return null;
-  if (typeof s !== 'object') { erreurs.push(`${ref} : « seance » doit être un objet.`); return null; }
-  let tempo = null;
-  if (s.tempo !== undefined && s.tempo !== null) {
+  if (typeof s !== 'object' || Array.isArray(s)) { erreurs.push(`${ref} : « seance » doit être un objet.`); return null; }
+  const seance = {};
+  if (s.tempo === null) seance.tempo = null;
+  else if (s.tempo !== undefined) {
     const ok = Array.isArray(s.tempo) && s.tempo.length >= 1 && s.tempo.length <= 4
       && s.tempo.every(p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && p[0].trim() && entier(p[1], 1, 30));
     if (!ok) erreurs.push(`${ref} : « seance.tempo » : 1 à 4 phases [libellé, secondes de 1 à 30], ou null.`);
-    else tempo = s.tempo.map(([l, d]) => [l.trim().slice(0, 20), d]);
+    else seance.tempo = s.tempo.map(([l, d]) => [l.trim().slice(0, 20), d]);
   }
-  if (s.recupS !== undefined && !entier(s.recupS, 0, 600)) erreurs.push(`${ref} : « seance.recupS » : entier de 0 à 600 secondes.`);
-  return { tempo, recupS: entier(s.recupS, 0, 600) ? s.recupS : 60, ...(texte(s.libelleTenue, 30) ? { libelleTenue: texte(s.libelleTenue, 30) } : {}) };
+  if (s.recupS !== undefined) {
+    if (!entier(s.recupS, 0, 600)) erreurs.push(`${ref} : « seance.recupS » : entier de 0 à 600 secondes.`);
+    else seance.recupS = s.recupS;
+  }
+  if (texte(s.libelleTenue, 30)) seance.libelleTenue = texte(s.libelleTenue, 30);
+  if (texte(s.motTenue, 30)) seance.motTenue = texte(s.motTenue, 30).toLowerCase();
+  return seance;
 }
 
 // Vérifie un programme (collé depuis l'IA, ou importé d'une sauvegarde). Renvoie { programme, erreurs } :
 // `programme` normalisé (identifiant `perso_…`, source « ia ») si `erreurs` est vide.
-export function validerProgramme(brut, { id = null, maintenant = Date.now() } = {}) {
+// `exigerFiches` : un exercice hors bibliothèque doit avoir une fiche complète (programme collé) ; faux pour les programmes
+// déjà enregistrés (sauvegarde), créés avant la bibliothèque.
+export function validerProgramme(brut, { id = null, maintenant = Date.now(), exigerFiches = true } = {}) {
   const erreurs = [];
   if (!brut || typeof brut !== 'object' || Array.isArray(brut)) return { programme: null, erreurs: ['Le programme doit être un objet JSON.'] };
   const libelle = texte(brut.libelle, 100);
@@ -206,10 +244,17 @@ export function validerProgramme(brut, { id = null, maintenant = Date.now() } = 
       const dosage = Array.isArray(e.dosage) ? e.dosage.slice(0, 20).map(x => (x === null ? null : texte(x, 120) || null)) : [];
       if (!dosage.some(x => x !== null)) erreurs.push(`${refE} : « dosage » doit contenir au moins une semaine renseignée.`);
       if (typeof e.alterne !== 'boolean') erreurs.push(`${refE} : « alterne » doit valoir true ou false.`);
+      let fiche = null;
+      if (e.fiche !== undefined && e.fiche !== null) {
+        if (exercice(e.fiche)) fiche = e.fiche;
+        else erreurs.push(`${refE} : « fiche » « ${e.fiche} » absente de la bibliothèque : choisis un identifiant de la liste, ou retire « fiche » et décris l'exercice dans « details ».`);
+      }
+      const details = lireDetails(e.details, refE, erreurs, exigerFiches && !fiche && e.fiche == null);
       const seance = lireSeance(e.seance, refE, erreurs);
       return {
-        ...(e.details && typeof e.details === 'object' ? { details: lireDetails(e.details) } : {}),
-        ...(seance ? { seance } : {}),
+        ...(fiche ? { fiche } : {}),
+        ...(details ? { details } : {}),
+        ...(seance && Object.keys(seance).length ? { seance } : {}),
         id: e.id, nom: texte(e.nom, 80), cible: texte(e.cible, 80), frequence: texte(e.frequence, 80) || (e.alterne ? 'Un jour sur deux' : 'Tous les jours'),
         alterne: e.alterne === true, facultatif: e.facultatif === true, consignes, dosage,
       };

@@ -67,7 +67,7 @@ export function lireImport(texte) {
     && ['a_faire', 'faite', 'ratee'].includes(x.etat)), 'séance de soin incomplète.');
   // Programmes personnels : même vérification qu'au collage depuis l'IA ; chaque suivi doit avoir son programme.
   const programmes = (d.programmes ?? []).map(x => {
-    const { programme, erreurs } = validerProgramme(x, { id: x.id, maintenant: x.creeLe });
+    const { programme, erreurs } = validerProgramme(x, { id: x.id, maintenant: x.creeLe, exigerFiches: false });
     exiger(programme, `programme de soin « ${x.libelle ?? x.id} » invalide (${erreurs[0]}).`);
     return programme;
   });
