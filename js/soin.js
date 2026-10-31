@@ -2,6 +2,7 @@
 // contraintes transmises au plan IA. Règles pures (sans DOM ni IndexedDB), testées par tests/soin.test.js.
 import { ajouterJours, ecartJours } from './format.js';
 import { uid, ErreurMetier } from './domaine.js';
+import { PROGRAMMES } from './programmes.js';
 
 export const COTES = [
   { id: 'gauche', libelle: 'Gauche' },
@@ -10,205 +11,12 @@ export const COTES = [
 
 // ------------------------------------------------------------ Référentiel des programmes
 
-// Dosage d'un exercice : une entrée par semaine de la phase (la dernière se répète ensuite) ;
-// null = exercice pas encore introduit cette semaine-là. « {cote} » est remplacé par le côté atteint.
-// Course : `autorisee` vaut true, false ou 'si_douleur_ok' (seulement si la dernière douleur de course
-// des 7 derniers jours est ≤ 4/10) ; `intensites`, `types` et `dureeMaxMin` limitent les séances autorisées.
-const ACHILLE = {
-  id: 'achille_corps',
-  libelle: 'Tendinopathie d\'Achille (corps du tendon)',
-  court: 'Tendon d\'Achille',
-  description: 'Douleur 2 à 6 cm au-dessus du talon, raideur au réveil, douleur qui cède à l\'échauffement puis revient après l\'effort. '
-    + 'Traitement de référence : charge progressive (isométrie, renforcement lourd et lent, puis pliométrie) pendant au moins 12 semaines, piloté par la douleur.',
-  regleDouleur: [
-    'Pendant l\'effort, la douleur reste ≤ 4/10.',
-    'Le lendemain matin, la raideur n\'est pas pire que d\'habitude.',
-    'Si l\'une des deux règles n\'est pas respectée : on réduit la charge, sans passer au repos complet.',
-  ],
-  aEviter: [
-    'Infiltration de corticoïdes : elle augmente le risque de rupture.',
-    'Anti-inflammatoires au long cours.',
-    'Étirements forcés du mollet.',
-    'Gestes explosifs (foot, sprints, sauts) avant la phase 3.',
-  ],
-  consulter: [
-    'Claquement ou sensation de coup de pied derrière la jambe.',
-    'Douleur brutale ou gros gonflement.',
-    'Impossible de monter sur la pointe du pied.',
-  ],
-  avisMedical: 'Avis médical conseillé (médecin du sport, échographie), surtout en cas d\'antécédent de rupture.',
-  entretien: 'Après le programme : gardez 2 séances par semaine de montées sur pointe lourdes pendant toute la préparation.',
-  phases: [
-    {
-      numero: 1,
-      nom: 'Calmer',
-      dureeMinSem: 2,
-      dureeMaxSem: 4,
-      but: 'Faire baisser la douleur sans mettre le tendon au repos complet.',
-      exercices: [
-        {
-          id: 'iso_debout',
-          nom: 'Isométrie debout, jambe tendue',
-          cible: 'Mollet (gastrocnémiens)',
-          frequence: '1 à 2 fois par jour',
-          alterne: false,
-          consignes: [
-            'Face à un mur, les mains en appui pour l\'équilibre.',
-            'Montez à mi-hauteur sur la pointe du pied et tenez 45 s, immobile.',
-            'Récupérez 2 min entre les répétitions.',
-            'Effort ressenti : environ 70 %. La douleur doit rester ≤ 3/10 ; elle baisse souvent pendant l\'exercice.',
-          ],
-          dosage: ['Sur les 2 pieds · 5 × 45 s', 'Jambe {cote} seule · 5 × 45 s', 'Jambe {cote} seule + sac 5 kg · 5 × 45 s', 'Jambe {cote} seule + 10 kg · 5 × 45 s'],
-        },
-        {
-          id: 'iso_assis',
-          nom: 'Isométrie assis, genou plié',
-          cible: 'Soléaire',
-          frequence: '1 à 2 fois par jour',
-          alterne: false,
-          consignes: [
-            'Assis, pied à plat, une charge posée sur le genou (sac lesté, packs d\'eau).',
-            'Levez le talon à mi-hauteur et tenez 45 s.',
-          ],
-          dosage: [null, '5 kg · 5 × 45 s', '10 kg · 5 × 45 s', '15 kg · 5 × 45 s'],
-        },
-        {
-          id: 'montees_lentes',
-          nom: 'Montées lentes sur pointe',
-          cible: 'Mollet et tendon',
-          frequence: 'Un jour sur deux',
-          alterne: true,
-          consignes: ['Comptez 3 s pour monter et 3 s pour descendre.'],
-          dosage: [null, 'Sur les 2 pieds · 3 × 15', 'Plus de poids sur la jambe {cote} · 3 × 15', 'Jambe {cote} seule, si douleur ≤ 4/10 · 3 × 15'],
-        },
-      ],
-      course: {
-        texte: 'Suspendue tant qu\'elle dépasse 4/10. Remplacez-la par vélo, elliptique ou natation (douleur ≤ 3/10). '
-          + 'Si elle reste ≤ 4/10 : footing facile de 30 min au plus.',
-        autorisee: 'si_douleur_ok',
-        intensites: ['facile'],
-        types: ['endurance', 'recuperation'],
-        dureeMaxMin: 30,
-      },
-      conseils: ['Talonnette de 6 à 8 mm dans les chaussures de ville pendant cette phase : elle soulage le tendon.'],
-      criteres: [
-        { id: 'duree', type: 'duree', jours: 14, libelle: 'Au moins 2 semaines dans la phase' },
-        { id: 'marche', type: 'derniere', champ: 'douleurMarche', max: 2, fenetre: 7, libelle: 'Marche ≤ 2/10' },
-        { id: 'escaliers', type: 'derniere', champ: 'douleurEscaliers', max: 3, fenetre: 7, libelle: 'Escaliers ≤ 3/10' },
-        { id: 'raideur', type: 'raideur', maxMoyenne: 2, baisse: 2, libelle: 'Raideur du matin en nette baisse' },
-        { id: 'test', type: 'test', nbMin: 15, douleurMax: 4, fenetre: 14, libelle: '15 montées sur la jambe {cote} seule, douleur ≤ 4/10' },
-      ],
-    },
-    {
-      numero: 2,
-      nom: 'Renforcer',
-      dureeMinSem: 8,
-      dureeMaxSem: 12,
-      but: 'Rendre le tendon capable d\'encaisser de nouveau la charge : renforcement lourd et lent.',
-      exercices: [
-        {
-          id: 'montees_debout',
-          nom: 'Montées sur pointe debout, jambe tendue',
-          cible: 'Mollet (gastrocnémiens) et tendon',
-          frequence: '3 fois par semaine, un jour sur deux',
-          alterne: true,
-          consignes: [
-            'Sur une marche, l\'avant du pied en appui, talon libre.',
-            '3 s pour monter, 3 s pour descendre, amplitude complète.',
-            'Charge (sac à dos, haltère) choisie pour finir chaque série fatigué, douleur ≤ 4/10.',
-            '2 à 3 min de récupération entre les séries.',
-          ],
-          dosage: ['3 × 15 lourdes', '3 × 12 lourdes', '3 × 12 lourdes', '4 × 10 lourdes', '4 × 10 lourdes', '4 × 8 lourdes', '4 × 8 lourdes', '4 × 8 lourdes', '4 × 6 lourdes'],
-        },
-        {
-          id: 'montees_assis',
-          nom: 'Montées sur pointe assis, genou plié',
-          cible: 'Soléaire',
-          frequence: '3 fois par semaine, un jour sur deux',
-          alterne: true,
-          consignes: [
-            'Assis, l\'avant du pied sur une cale, une charge lourde posée sur le genou.',
-            'Même rythme : 3 s pour monter, 3 s pour descendre.',
-          ],
-          dosage: ['3 × 15 lourdes', '3 × 12 lourdes', '3 × 12 lourdes', '4 × 10 lourdes', '4 × 10 lourdes', '4 × 8 lourdes', '4 × 8 lourdes', '4 × 8 lourdes', '4 × 6 lourdes'],
-        },
-        {
-          id: 'iso_debout',
-          nom: 'Isométrie debout (jours sans renforcement)',
-          cible: 'Antidouleur',
-          frequence: 'Les jours de repos, si besoin',
-          alterne: false,
-          facultatif: true,
-          consignes: ['Comme en phase 1 : 5 × 45 s à mi-hauteur, sur la jambe {cote}, pour calmer une douleur.'],
-          dosage: ['Jambe {cote} seule · 5 × 45 s'],
-        },
-      ],
-      course: {
-        texte: 'Footing facile uniquement, 45 min au plus, si la douleur reste ≤ 4/10 et que la raideur du lendemain n\'augmente pas. '
-          + 'Ni fractionné, ni côtes, ni sprints.',
-        autorisee: true,
-        intensites: ['facile'],
-        types: ['endurance', 'recuperation', 'sortie_longue'],
-        dureeMaxMin: 45,
-      },
-      conseils: ['Notez la charge utilisée dans les notes du bilan pour suivre la progression.'],
-      criteres: [
-        { id: 'duree', type: 'duree', jours: 56, libelle: 'Au moins 8 semaines dans la phase' },
-        { id: 'test', type: 'test', nbMin: 25, douleurMax: 3, fenetre: 14, libelle: '25 montées sur la jambe {cote} seule, douleur ≤ 3/10' },
-        { id: 'escaliers', type: 'derniere', champ: 'douleurEscaliers', max: 2, fenetre: 7, libelle: 'Escaliers ≤ 2/10' },
-        { id: 'raideur', type: 'raideur', maxMoyenne: 2, baisse: null, libelle: 'Raideur du matin ≤ 2/10 (moyenne des 3 derniers bilans)' },
-      ],
-    },
-    {
-      numero: 3,
-      nom: 'Rendre élastique',
-      dureeMinSem: 4,
-      dureeMaxSem: 6,
-      but: 'Retrouver l\'élasticité du tendon et reprendre la course progressivement.',
-      exercices: [
-        {
-          id: 'sautillements',
-          nom: 'Sautillements',
-          cible: 'Élasticité du tendon',
-          frequence: '3 fois par semaine, un jour sur deux',
-          alterne: true,
-          consignes: [
-            'Petits rebonds sur l\'avant du pied, genoux souples, sur sol amorti.',
-            'Arrêtez la série si la douleur dépasse 3/10.',
-          ],
-          dosage: ['Sur les 2 pieds · 3 × 20', 'Sur les 2 pieds · 3 × 30', 'Jambe {cote} seule · 3 × 15', 'Corde à sauter · 3 × 1 min'],
-        },
-        {
-          id: 'montees_debout',
-          nom: 'Montées sur pointe lourdes (entretien)',
-          cible: 'Mollet et tendon',
-          frequence: '2 fois par semaine',
-          alterne: true,
-          consignes: ['Comme en phase 2, avec la dernière charge utilisée.'],
-          dosage: ['4 × 6 lourdes, debout puis assis'],
-        },
-      ],
-      course: {
-        texte: 'Reprise progressive : alternance course/marche (par exemple 5 × 4 min de course + 1 min de marche), puis course continue facile, '
-          + '+10 % par semaine. Intensité facile ou modérée, 60 min au plus. Fractionné et côtes en dernier, après la phase.',
-        autorisee: true,
-        intensites: ['facile', 'moderee'],
-        types: ['endurance', 'recuperation', 'sortie_longue', 'seuil'],
-        dureeMaxMin: 60,
-      },
-      conseils: ['Courez le lendemain d\'un jour sans sautillements.'],
-      criteres: [
-        { id: 'duree', type: 'duree', jours: 28, libelle: 'Au moins 4 semaines dans la phase' },
-        { id: 'sautillements', type: 'derniere', champ: 'douleurSautillements', max: 2, fenetre: 14, libelle: 'Sautillements ≤ 2/10' },
-        { id: 'course', type: 'derniere', champ: 'douleurCourse', max: 2, fenetre: 7, libelle: 'Course ≤ 2/10' },
-        { id: 'raideur', type: 'raideur', maxMoyenne: 1, baisse: null, libelle: 'Raideur du matin ≤ 1/10 (moyenne des 3 derniers bilans)' },
-      ],
-    },
-  ],
-};
-
-export const PROGRAMMES = [ACHILLE];
-export const programme = id => PROGRAMMES.find(p => p.id === id) ?? null;
+// Catalogue (js/programmes.js) + programmes personnels (proposés par une IA et importés par l'utilisateur).
+let programmesPerso = [];
+export const definirProgrammesPerso = liste => { programmesPerso = Array.isArray(liste) ? liste : []; };
+export const tousLesProgrammes = () => [...PROGRAMMES, ...programmesPerso];
+export const programme = id => tousLesProgrammes().find(p => p.id === id) ?? null;
+export { PROGRAMMES };
 
 const coteTexte = cote => (cote === 'droit' ? 'droite' : 'gauche');
 export const avecCote = (texte, cote) => (texte ?? '').replaceAll('{cote}', coteTexte(cote));
@@ -312,9 +120,10 @@ export function enregistrerBilan(donnees, suivi, bilans, maintenant = Date.now()
   }
   const nb = note010(donnees.testMonteesNb);
   const dt = note010(donnees.testMonteesDouleur);
-  exiger(nb === null || (Number.isInteger(nb) && nb >= 0 && nb <= 200), 'Test des montées : nombre de répétitions invalide.');
-  exiger(dt === null || (Number.isInteger(dt) && dt >= 0 && dt <= 10), 'Test des montées : douleur de 0 à 10.');
-  exiger((nb === null) === (dt === null), 'Test des montées : indiquez le nombre de répétitions et la douleur.');
+  const nomTest = programme(suivi.programme)?.test?.nom ?? 'Test';
+  exiger(nb === null || (Number.isInteger(nb) && nb >= 0 && nb <= 200), `${nomTest} : résultat invalide (nombre entier de 0 à 200).`);
+  exiger(dt === null || (Number.isInteger(dt) && dt >= 0 && dt <= 10), `${nomTest} : douleur de 0 à 10.`);
+  exiger((nb === null) === (dt === null), `${nomTest} : indiquez le résultat et la douleur.`);
   b.testMonteesNb = nb;
   b.testMonteesDouleur = dt;
   b.exercices = Array.isArray(donnees.exercices) ? [...new Set(donnees.exercices)] : [];
@@ -429,7 +238,7 @@ export function criteresPassage(suivi, bilans, date) {
       return {
         id: c.id, libelle,
         ok: !!b && b.testMonteesNb >= c.nbMin && b.testMonteesDouleur <= c.douleurMax,
-        valeur: b ? `${b.testMonteesNb} montées à ${b.testMonteesDouleur}/10` : 'test à faire',
+        valeur: b ? `${b.testMonteesNb} ${prog.test?.unite ?? ''} à ${b.testMonteesDouleur}/10`.replace('  ', ' ') : 'test à faire',
       };
     }
     return { id: c.id, libelle, ok: false, valeur: '' };

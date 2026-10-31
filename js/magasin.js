@@ -18,6 +18,7 @@ export const etat = {
   blessures: [], // suivis de blessure (programme de soin)
   bilans: [], // bilans quotidiens des suivis
   seancesSoin: [], // séances de soin du planning (une par jour d'exercices et par suivi)
+  programmes: [], // programmes de soin personnels (proposés par une IA, vérifiés puis importés)
   appareil: {},
 };
 
@@ -37,6 +38,8 @@ export async function charger() {
   etat.blessures = d.blessures ?? [];
   etat.bilans = d.bilans ?? [];
   etat.seancesSoin = d.seancesSoin ?? [];
+  etat.programmes = d.programmes ?? [];
+  S.definirProgrammesPerso(etat.programmes);
   etat.appareil = d.appareil;
   if (!etat.appareil.premiereUtilisation) await ecrireAppareil('premiereUtilisation', aujourdhui());
   await synchroniserSoin({ silencieux: true });
@@ -237,6 +240,30 @@ export async function supprimerSuivi(id) {
   notifier();
 }
 
+// Programme de soin personnel (déjà vérifié par validerProgramme) : ajouté au référentiel des programmes.
+export async function ajouterProgrammePerso(programme) {
+  await db.mettre('programmes', programme);
+  remplacerDans(etat.programmes, programme);
+  S.definirProgrammesPerso(etat.programmes);
+  notifier();
+  return programme;
+}
+
+export async function supprimerProgrammePerso(id) {
+  if (etat.blessures.some(s => s.programme === id)) throw new D.ErreurMetier('Ce programme est utilisé par un suivi : supprimez d\'abord le suivi.');
+  await db.supprimer('programmes', id);
+  etat.programmes = etat.programmes.filter(p => p.id !== id);
+  S.definirProgrammesPerso(etat.programmes);
+  notifier();
+}
+
+// Brouillon de description d'une blessure (sur ce téléphone seulement, le temps de l'échange avec l'IA).
+export const enregistrerBrouillonBlessure = brouillon => ecrireAppareil('brouillonBlessure', brouillon);
+export async function effacerBrouillonBlessure() {
+  await db.supprimerAppareil('brouillonBlessure');
+  delete etat.appareil.brouillonBlessure;
+}
+
 // Met les séances de soin futures « à faire » en accord avec les suivis (voir S.reconcilierSoin).
 export async function synchroniserSoin({ silencieux = false } = {}) {
   const r = S.reconcilierSoin(etat.blessures, etat.seancesSoin, etat.bilans, aujourdhui());
@@ -318,6 +345,8 @@ export async function importer(donnees) {
   etat.blessures = donnees.blessures ?? [];
   etat.bilans = donnees.bilans ?? [];
   etat.seancesSoin = donnees.seancesSoin ?? [];
+  etat.programmes = donnees.programmes ?? [];
+  S.definirProgrammesPerso(etat.programmes);
   await synchroniserSoin({ silencieux: true });
   notifier();
 }

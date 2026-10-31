@@ -317,7 +317,8 @@ async function main() {
     etape('Suivi de blessure : démarrage, bilan du jour, carte verte, contrainte du plan IA');
     await page.goto(`${URL_APP}#/accueil`);
     await page.locator('a.lien-soin').click();
-    await page.getByRole('button', { name: '＋ Démarrer un suivi' }).click();
+    await page.getByRole('button', { name: '＋ Ajouter une blessure' }).click();
+    await page.locator('.feuille .ligne-seance', { hasText: 'Tendinopathie d\'Achille' }).click();
     await page.locator('.feuille').getByRole('button', { name: 'Démarrer le suivi' }).click();
     await page.getByText('Choisissez le côté atteint.').waitFor();
     await page.locator('.feuille .puce', { hasText: 'Gauche' }).click();
@@ -449,6 +450,89 @@ async function main() {
     soin = await etatSoin();
     assert.deepEqual([...new Set(soin.futures.map(x => x.phase))], [1, 2, 3]);
 
+    etape('Ajouter une blessure : programme du catalogue depuis l\'onglet Objectifs');
+    await page.getByRole('link', { name: 'Objectifs', exact: true }).click();
+    await page.getByRole('button', { name: '🩹 Ajouter une blessure' }).click();
+    await page.locator('.feuille .ligne-seance', { hasText: 'Périostite tibiale' }).click();
+    assert.equal(await page.locator('.feuille [name=programme]').inputValue(), 'periostite');
+    await page.locator('.feuille .puce', { hasText: 'Droit' }).click();
+    await page.locator('.feuille').getByRole('button', { name: 'Démarrer le suivi' }).click();
+    await page.locator('.boite', { hasText: 'Recalculer' }).getByRole('button', { name: 'Plus tard' }).click();
+    await page.getByRole('heading', { name: 'Périostite droite' }).waitFor();
+    await page.getByText('Phase 1/3 · Calmer · semaine 1').waitFor();
+    await page.getByRole('button', { name: 'Faire le bilan du jour' }).click();
+    await page.locator('.feuille summary', { hasText: 'Test des montées sur pointe (facultatif)' }).waitFor();
+    await page.locator('.feuille').getByRole('button', { name: 'Fermer' }).click();
+
+    etape('Ajouter une blessure : description, texte pour l\'IA, programme collé, vérifié puis suivi');
+    const programmeIa = {
+      libelle: 'Tendinopathie haute des ischio-jambiers', court: 'Ischio-jambiers',
+      description: 'Douleur profonde sous la fesse.', regleDouleur: ['Douleur ≤ 3/10.'], aEviter: ['Étirements forcés.'],
+      consulter: ['Hématome important ou claquement.'], avisMedical: 'Avis médical conseillé.', entretien: '2 ponts par semaine.',
+      test: { nom: 'Test du pont sur une jambe', unite: 'répétitions', consigne: 'Pont sur la jambe {cote} jusqu\'à la fatigue.' },
+      phases: [
+        { numero: 1, nom: 'Calmer', dureeMinSem: 2, dureeMaxSem: 3, but: 'Calmer.',
+          exercices: [{ id: 'iso_pont', nom: 'Pont isométrique', cible: 'Ischio-jambiers', frequence: 'Tous les jours', alterne: false, consignes: ['Tenez 30 s.'], dosage: ['5 × 30 s', 'Jambe {cote} seule · 5 × 30 s'] }],
+          course: { texte: 'Footing facile 20 min.', autorisee: 'si_douleur_ok', intensites: ['facile'], types: ['endurance'], dureeMaxMin: 20 },
+          criteres: [{ id: 'duree', type: 'duree', jours: 14, libelle: '2 semaines' }] },
+        { numero: 2, nom: 'Renforcer', dureeMinSem: 4, dureeMaxSem: 8, but: 'Renforcer.',
+          exercices: [{ id: 'souleve', nom: 'Soulevé de terre jambes tendues', cible: 'Ischio-jambiers', frequence: 'Un jour sur deux', alterne: true, consignes: ['Dos droit.'], dosage: ['3 × 10'] }],
+          course: { texte: 'Facile ≤ 45 min.', autorisee: true, intensites: ['facile'], types: ['endurance'], dureeMaxMin: 45 },
+          criteres: [{ id: 'course', type: 'derniere', champ: 'douleurCourse', max: 1, fenetre: 7, libelle: 'Course ≤ 1/10' }] },
+      ],
+    };
+    await page.getByRole('link', { name: 'Objectifs', exact: true }).click();
+    await page.getByRole('button', { name: '🩹 Ajouter une blessure' }).click();
+    await page.getByRole('button', { name: 'Décrire la blessure' }).click();
+    const description = page.locator('.feuille').last();
+    await description.locator('[name=zone]').selectOption('Cuisse (arrière)');
+    await description.locator('.puce', { hasText: 'Gauche' }).click();
+    await description.locator('[name=douleurCourse][value="5"]').check({ force: true });
+    await description.locator('[data-puces=moments] .puce', { hasText: 'Pendant l\'effort' }).click();
+    await description.locator('[name=libre]').fill('Douleur profonde sous la fesse gauche en côte');
+    await capture('19-description-blessure');
+    await description.getByRole('button', { name: 'Copier le texte pour l\'IA' }).click();
+    await page.locator('.toast', { hasText: 'Texte copié' }).waitFor();
+    const texteIa = await page.evaluate(() => navigator.clipboard.readText());
+    for (const attendu of ['Questions-réponses', 'Zone : Cuisse (arrière) · côté : Gauche', 'en courant : 5/10', 'Douleur profonde sous la fesse gauche en côte', 'Tri de Paris', 'Périostite tibiale']) {
+      assert.ok(texteIa.includes(attendu), `texte pour l'IA sans « ${attendu} »`);
+    }
+    // Le brouillon est gardé le temps de l'échange avec l'IA (on peut fermer puis rouvrir).
+    await page.waitForTimeout(600);
+    await page.locator('.feuille').getByRole('button', { name: 'Fermer' }).last().click();
+    await page.locator('.feuille').getByRole('button', { name: 'Fermer' }).last().click();
+    await page.getByRole('button', { name: '🩹 Ajouter une blessure' }).click();
+    await page.getByRole('button', { name: 'Décrire la blessure' }).click();
+    await page.locator('.feuille [name=libre]', { hasText: 'Douleur profonde sous la fesse gauche en côte' }).waitFor();
+    // Programme refusé : motifs affichés et corrections à copier pour l'IA.
+    await page.locator('.feuille [name=programme]').fill(JSON.stringify({ ...programmeIa, consulter: [] }));
+    await page.getByRole('button', { name: 'Vérifier le programme' }).click();
+    await page.getByText('Programme refusé').waitFor();
+    await page.getByRole('button', { name: 'Copier les corrections pour l\'IA' }).click();
+    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /consulter/);
+    // Programme valide, collé avec le texte de l'IA autour.
+    await page.locator('.feuille [name=programme]').fill('Voici le programme :\n```json\n' + JSON.stringify(programmeIa) + '\n```\nBon courage !');
+    await page.getByRole('button', { name: 'Vérifier le programme' }).click();
+    await page.locator('.feuille .carte-soin h2', { hasText: 'Tendinopathie haute des ischio-jambiers' }).waitFor();
+    await page.getByText('Jambe gauche seule · 5 × 30 s').waitFor({ state: 'attached' });
+    await capture('20-programme-ia');
+    await page.getByRole('button', { name: 'Enregistrer et démarrer le suivi' }).click();
+    await page.locator('.toast', { hasText: 'Programme enregistré' }).waitFor();
+    assert.match(await page.locator('.feuille [name=programme]').inputValue(), /^perso_/);
+    await page.locator('.feuille .puce', { hasText: 'Gauche' }).click();
+    await page.locator('.feuille').getByRole('button', { name: 'Démarrer le suivi' }).click();
+    await page.locator('.boite', { hasText: 'Recalculer' }).getByRole('button', { name: 'Plus tard' }).click();
+    await page.getByRole('heading', { name: 'Ischio-jambiers gauche' }).waitFor();
+    await page.getByText('Phase 1/2 · Calmer · semaine 1').waitFor();
+    const etatBlessures = await page.evaluate(async () => {
+      const M = await import('./js/magasin.js');
+      const perso = M.etat.programmes[0];
+      return { programmes: M.etat.programmes.length, suivis: M.etat.blessures.length, seances: M.etat.seancesSoin.filter(x => x.blessureId === M.etat.blessures.find(b => b.programme === perso.id).id).length, brouillon: M.etat.appareil.brouillonBlessure ?? null };
+    });
+    assert.deepEqual({ ...etatBlessures, seances: etatBlessures.seances > 20 }, { programmes: 1, suivis: 3, seances: true, brouillon: null });
+    await page.goto(`${URL_APP}#/soin/liste`);
+    await page.locator('.ligne-programme', { hasText: 'utilisé par un suivi' }).waitFor();
+
     etape('Export JSON (sans clé API) puis import avec confirmation');
     await page.goto(`${URL_APP}#/reglages/sauvegarde`);
     const [telechargement] = await Promise.all([
@@ -461,9 +545,10 @@ async function main() {
     const exportJson = JSON.parse(exportTexte);
     assert.equal(exportJson.donnees.objectifs.length, 2);
     assert.equal(exportJson.donnees.realisees.length, 2);
-    assert.equal(exportJson.donnees.blessures.length, 1);
+    assert.equal(exportJson.donnees.blessures.length, 3);
+    assert.equal(exportJson.donnees.programmes.length, 1);
     assert.equal(exportJson.donnees.bilans.length, 1);
-    assert.equal(exportJson.format, 3);
+    assert.equal(exportJson.format, 4);
     assert.ok(exportJson.donnees.seancesSoin.length >= 70);
     assert.match(telechargement.suggestedFilename(), /^dossard-sauvegarde-\d{4}-\d{2}-\d{2}\.json$/);
     await page.getByText(/Dernier export : /).waitFor();

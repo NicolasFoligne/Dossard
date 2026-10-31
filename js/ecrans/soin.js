@@ -4,6 +4,7 @@ import * as S from '../soin.js';
 import * as F from '../format.js';
 import * as U from '../ui.js';
 import { ouvrirPlanIa } from './planIa.js';
+import { ouvrirAjoutBlessure } from './blessure.js';
 
 const { h } = U;
 
@@ -13,7 +14,7 @@ const objectifsEnCours = () => M.etat.objectifs.some(o => o.statut === 'en_cours
 
 function sousTitrePhase(s, date) {
   const p = S.phaseDe(s);
-  return `Phase ${p.numero}/3 · ${p.nom} · semaine ${S.semaineDansPhase(s, date)}`;
+  return `Phase ${p.numero}/${S.programme(s.programme).phases.length} · ${p.nom} · semaine ${S.semaineDansPhase(s, date)}`;
 }
 
 function resumeBilan(b) {
@@ -121,8 +122,29 @@ export function ecranSoin(sous) {
       h('h2', 'Programme de soin'),
       h('p', 'Suivez une blessure à part de vos séances : exercices du jour, bilan quotidien de la douleur, critères de passage d\'une phase à l\'autre.'),
       h('p.aide', 'Le plan d\'entraînement IA tient compte de la phase en cours (course limitée ou suspendue).')),
-    h('button.bouton.large.bouton-soin', { type: 'button', onclick: () => ouvrirSuivi() }, '＋ Démarrer un suivi'),
-    termines.length > 0 && h('section.carte', h('h2', 'Suivis terminés'), termines.map(ligne)));
+    h('button.bouton.large.bouton-soin', { type: 'button', onclick: () => ouvrirAjoutBlessure() }, '＋ Ajouter une blessure'),
+    termines.length > 0 && h('section.carte', h('h2', 'Suivis terminés'), termines.map(ligne)),
+    programmesPerso());
+}
+
+// Programmes personnels (proposés par une IA) : supprimables s'ils ne servent à aucun suivi.
+function programmesPerso() {
+  const perso = S.tousLesProgrammes().filter(p => p.source === 'ia');
+  if (!perso.length) return null;
+  return h('section.carte', h('h2', 'Mes programmes'),
+    h('p.aide', 'Programmes proposés par une IA et importés. Ils apparaissent dans le choix des blessures.'),
+    perso.map(p => {
+      const utilise = M.etat.blessures.some(s => s.programme === p.id);
+      return h('div.ligne-programme',
+        h('span.ligne-texte', h('strong', p.libelle), h('span', `${p.phases.length} phases${utilise ? ' · utilisé par un suivi' : ''}`)),
+        !utilise && h('button.bouton.secondaire.petit.danger-texte', {
+          type: 'button',
+          onclick: async () => {
+            if (!(await U.confirmer(`Supprimer le programme « ${p.libelle} » ?`, { ok: 'Supprimer', danger: true }))) return;
+            if (await U.tenter(async () => { await M.supprimerProgrammePerso(p.id); return true; })) { U.toast('Programme supprimé'); location.hash = '#/soin/liste'; }
+          },
+        }, 'Supprimer'));
+    }));
 }
 
 function enteteRetour(titre, retour, sousTitre = null) {
@@ -183,7 +205,7 @@ function ecranSuivi(s) {
         h('span', h('span.critere-libelle', c.libelle), h('span.critere-valeur', c.valeur)),
         h('span.visuellement-cache', c.ok ? 'rempli' : 'non rempli')))),
       !passage.criteres.find(c => c.id === 'test')?.ok && passage.criteres.some(c => c.id === 'test')
-      && h('p.aide', 'Le test des montées se saisit dans le bilan du jour (rubrique « Test des montées »).'),
+      && h('p.aide', `Le « ${prog.test?.nom ?? 'test'} » se saisit dans le bilan du jour.`),
       passage.pret
         ? h('button.bouton.large.bouton-soin', { type: 'button', onclick: () => (passage.suivante ? passerPhase(s, passage.suivante) : terminer(s, true)) },
           passage.suivante ? `Passer en phase ${passage.suivante.numero}` : 'Terminer le programme')
@@ -204,32 +226,40 @@ function ecranSuivi(s) {
 
     h('section.carte',
       h('h2', 'Programme complet'),
-      h('p.aide', prog.description),
-      prog.phases.map(p => h('details.phase-programme', { open: enCours && p.numero === s.phase },
-        h('summary', `Phase ${p.numero} · ${p.nom} (${p.dureeMinSem} à ${p.dureeMaxSem} semaines)`),
-        h('div.exercice-corps',
-          h('p', p.but),
-          p.exercices.map(e => h('div.programme-exercice',
-            h('strong', S.avecCote(e.nom, s.cote)), h('span.aide', ` · ${e.frequence}`),
-            h('ul', e.consignes.map(c => h('li', S.avecCote(c, s.cote)))),
-            h('p.aide', 'Progression : ' + e.dosage.map((d, i) => (d ? `sem. ${i + 1}${i === e.dosage.length - 1 && e.dosage.length > 1 ? '+' : ''} : ${S.avecCote(d, s.cote)}` : null)).filter(Boolean).join(' · ')))),
-          h('p', h('strong', 'Course : '), p.course.texte),
-          p.conseils.map(c => h('p.aide', `💡 ${S.avecCote(c, s.cote)}`)),
-          h('p', h('strong', 'Critères pour passer à la suite : ')),
-          h('ul', p.criteres.map(c => h('li', S.avecCote(c.libelle, s.cote))))))),
-      h('p.aide', prog.entretien)),
+      detailProgramme(prog, s.cote, enCours ? s.phase : null)),
 
     h('section.carte',
       h('h2', 'Règles de sécurité'),
       h('h3', 'Pilotage par la douleur'), h('ul', prog.regleDouleur.map(r => h('li', r))),
       h('h3', 'À éviter'), h('ul', prog.aEviter.map(r => h('li', r))),
-      h('div.soin-urgence', h('h3', '⛔ Consultez sans attendre en cas de :'), h('ul', prog.consulter.map(r => h('li', r)))),
+      h('div.soin-urgence', h('h3', '⛔ Consultez sans attendre en cas de\u00a0:'), h('ul', prog.consulter.map(r => h('li', r)))),
       h('p.aide', prog.avisMedical)),
 
     h('div.actions-carte',
       h('button.bouton.secondaire', { type: 'button', onclick: () => ouvrirSuivi(s.id) }, 'Modifier'),
       enCours && h('button.bouton.secondaire', { type: 'button', onclick: () => terminer(s, false) }, 'Terminer le suivi'),
       h('button.bouton.secondaire.danger-texte', { type: 'button', onclick: () => supprimer(s) }, 'Supprimer')));
+}
+
+// Phases, exercices dosés, règles de course et critères d'un programme. `phaseOuverte` : phase dépliée.
+export function detailProgramme(prog, cote, phaseOuverte = null) {
+  return [
+    h('p.aide', prog.description),
+    prog.phases.map(p => h('details.phase-programme', { open: p.numero === phaseOuverte },
+      h('summary', `Phase ${p.numero} · ${p.nom} (${p.dureeMinSem} à ${p.dureeMaxSem} semaines)`),
+      h('div.exercice-corps',
+        h('p', p.but),
+        p.exercices.map(e => h('div.programme-exercice',
+          h('strong', S.avecCote(e.nom, cote)), h('span.aide', ` · ${e.frequence}${e.facultatif ? ' · facultatif' : ''}`),
+          h('ul', e.consignes.map(c => h('li', S.avecCote(c, cote)))),
+          h('p.aide', 'Progression : ' + e.dosage.map((d, i) => (d ? `sem. ${i + 1}${i === e.dosage.length - 1 && e.dosage.length > 1 ? '+' : ''} : ${S.avecCote(d, cote)}` : null)).filter(Boolean).join(' · ')))),
+        h('p', h('strong', 'Course : '), p.course.texte),
+        p.conseils.map(c => h('p.aide', `💡 ${S.avecCote(c, cote)}`)),
+        h('p', h('strong', 'Critères pour passer à la suite : ')),
+        h('ul', p.criteres.map(c => h('li', S.avecCote(c.libelle, cote))))))),
+    prog.test && h('p.aide', h('strong', `${prog.test.nom} : `), S.avecCote(prog.test.consigne, cote)),
+    prog.entretien && h('p.aide', prog.entretien),
+  ];
 }
 
 function ligneBilan(s, b) {
@@ -298,7 +328,7 @@ async function passerPhase(s, cible, retour = false) {
 
 async function terminer(s, gueri) {
   const message = gueri
-    ? 'Tous les critères sont remplis : terminer le programme ? Gardez 2 séances de montées lourdes par semaine en entretien.'
+    ? `Tous les critères sont remplis : terminer le programme ? ${S.programme(s.programme)?.entretien ?? ''}`.trim()
     : 'Terminer ce suivi ? Le plan d\'entraînement n\'en tiendra plus compte.';
   if (!(await U.confirmer(message, { ok: 'Terminer' }))) return;
   const ok = await U.tenter(() => M.terminerSuivi(s.id));
@@ -318,26 +348,36 @@ async function supprimer(s) {
 
 // ------------------------------------------------------------ Création / modification du suivi
 
-export function ouvrirSuivi(id = null) {
+export function ouvrirSuivi(id = null, programmeId = null) {
   const existant = id ? M.suivi(id) : null;
   U.ouvrirFeuille(existant ? 'Modifier le suivi' : 'Nouveau suivi de blessure', fermer => {
     const erreur = zoneErreur();
     const form = h('form.formulaire', { novalidate: true, autocomplete: 'off' });
-    const prog = S.PROGRAMMES[0];
+    let prog = S.programme(existant?.programme ?? programmeId) ?? S.PROGRAMMES[0];
+    const description = h('p.aide', prog.description);
+    const avis = h('p.bandeau-info', prog.avisMedical);
+    const choixPhase = h('div.zone');
+    const dessinerPhases = () => U.vider(choixPhase, !existant && U.champ('Phase de départ',
+      U.selection('phase', prog.phases.map(p => ({ id: String(p.numero), libelle: `${p.numero}. ${p.nom}` })), '1'),
+      'Commencez par la phase 1 si la douleur est encore présente au quotidien.'));
+    const programmes = S.tousLesProgrammes().map(p => ({ id: p.id, libelle: p.source === 'ia' ? `${p.libelle} (programme personnel)` : p.libelle }));
     form.append(
-      U.champ('Programme', U.selection('programme', S.PROGRAMMES.map(p => ({ id: p.id, libelle: p.libelle })), existant?.programme ?? prog.id, { disabled: !!existant })),
-      h('p.aide', prog.description),
+      U.champ('Programme', U.selection('programme', programmes, prog.id, {
+        disabled: !!existant,
+        onchange: e => { prog = S.programme(e.target.value); description.textContent = prog.description; avis.textContent = prog.avisMedical; dessinerPhases(); },
+      })),
+      description,
       h('fieldset.champ', h('legend.champ-libelle', 'Côté atteint'),
         h('div.puces.puces-uniques', { role: 'radiogroup' }, S.COTES.map(c => h('label.puce',
           h('input', { type: 'radio', name: 'cote', value: c.id, checked: (existant?.cote ?? '') === c.id }),
           h('span', c.libelle))))),
       U.champ('Date de début', U.date('debut', existant?.debut ?? F.aujourdhui(), { max: F.aujourdhui() })),
-      !existant && U.champ('Phase de départ', U.selection('phase', prog.phases.map(p => ({ id: String(p.numero), libelle: `${p.numero}. ${p.nom}` })), '1'),
-        'Commencez par la phase 1 si la douleur est encore présente au quotidien.'),
+      choixPhase,
       U.champ('Notes', U.zoneTexte('notes', existant?.notes ?? '', { placeholder: 'Antécédents, avis médical, examens…' })),
-      h('p.bandeau-info', prog.avisMedical),
+      avis,
       erreur,
       h('div.actions-formulaire', h('button.bouton.large.bouton-soin', { type: 'submit' }, existant ? 'Enregistrer' : 'Démarrer le suivi')));
+    dessinerPhases();
 
     form.addEventListener('submit', async e => {
       e.preventDefault();
@@ -390,7 +430,11 @@ export function ouvrirBilan({ suiviId, id = null, date = null }) {
     const champNote = (c, aide = null) => h('fieldset.champ', h('legend.champ-libelle', c.libelle),
       U.echelle(c.id, depart[c.id], { vide: c.vide ?? null, libelle: c.libelle }), aide && h('span.champ-aide', aide));
     const champs = Object.fromEntries(S.CHAMPS_DOULEUR.map(c => [c.id, c]));
-    const avecSautillements = s.phase >= 3 || depart.douleurSautillements !== null && depart.douleurSautillements !== undefined;
+    const prog = S.programme(s.programme);
+    // Douleur aux sautillements : demandée si la phase en parle (critère ou exercice), ou si elle a déjà été notée.
+    const phase = S.phaseDe(s);
+    const avecSautillements = phase.criteres.some(c => c.champ === 'douleurSautillements') || phase.exercices.some(e => e.id.includes('saut'))
+      || (depart.douleurSautillements !== null && depart.douleurSautillements !== undefined);
     const testRenseigne = depart.testMonteesNb !== null && depart.testMonteesNb !== undefined;
 
     form.append(
@@ -402,11 +446,11 @@ export function ouvrirBilan({ suiviId, id = null, date = null }) {
       zoneExercices,
       champNote(champs.douleurExercices, 'Règle : ≤ 4/10.'),
       avecSautillements && champNote(champs.douleurSautillements),
-      h('details.test-montees', { open: testRenseigne },
-        h('summary', 'Test des montées sur pointe (facultatif)'),
+      prog.test && h('details.test-montees', { open: testRenseigne },
+        h('summary', `${prog.test.nom} (facultatif)`),
         h('div.formulaire',
-          h('p.aide', S.avecCote('Sur la jambe {cote} seule, montées complètes jusqu\'à la fatigue ou une douleur supérieure à 4/10. À faire une fois par semaine environ.', s.cote)),
-          U.champ('Nombre de montées', U.nombre('testMonteesNb', depart.testMonteesNb ?? null, { inputMode: 'numeric', placeholder: 'ex. 15' })),
+          h('p.aide', S.avecCote(prog.test.consigne, s.cote)),
+          U.champ(`Résultat (${prog.test.unite})`, U.nombre('testMonteesNb', depart.testMonteesNb ?? null, { inputMode: 'numeric', placeholder: 'ex. 15' })),
           h('fieldset.champ', h('legend.champ-libelle', 'Douleur pendant le test'),
             U.echelle('testMonteesDouleur', depart.testMonteesDouleur ?? null, { vide: 'Non testé', libelle: 'Douleur pendant le test' })))),
       U.champ('Notes', U.zoneTexte('notes', depart.notes ?? '', { placeholder: 'Charge utilisée, sensations, chaussures…' })),
