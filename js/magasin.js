@@ -17,6 +17,7 @@ export const etat = {
   realisees: [],
   blessures: [], // suivis de blessure (programme de soin)
   bilans: [], // bilans quotidiens des suivis
+  seancesSoin: [], // séances de soin du planning (une par jour d'exercices et par suivi)
   appareil: {},
 };
 
@@ -35,8 +36,10 @@ export async function charger() {
   etat.realisees = d.realisees;
   etat.blessures = d.blessures ?? [];
   etat.bilans = d.bilans ?? [];
+  etat.seancesSoin = d.seancesSoin ?? [];
   etat.appareil = d.appareil;
   if (!etat.appareil.premiereUtilisation) await ecrireAppareil('premiereUtilisation', aujourdhui());
+  await synchroniserSoin({ silencieux: true });
 }
 
 async function ecrireAppareil(cle, valeur) {
@@ -55,6 +58,7 @@ export const realisee = id => etat.realisees.find(r => r.id === id);
 
 export const suivi = id => etat.blessures.find(s => s.id === id);
 export const bilan = id => etat.bilans.find(b => b.id === id);
+export const seanceSoin = id => etat.seancesSoin.find(x => x.id === id);
 
 export const aDesDonnees = () => etat.objectifs.length + etat.prevues.length + etat.realisees.length + etat.blessures.length > 0;
 
@@ -207,6 +211,7 @@ export async function appliquerPlan(plan, modele) {
 async function sauverSuivi(s) {
   await db.mettre('blessures', s);
   remplacerDans(etat.blessures, s);
+  await synchroniserSoin({ silencieux: true });
   notifier();
   return s;
 }
@@ -216,13 +221,53 @@ export const modifierSuivi = (id, donnees) => sauverSuivi(S.modifierSuivi(suivi(
 export const changerPhaseSuivi = (id, numero) => sauverSuivi(S.changerPhase(suivi(id), numero, aujourdhui()));
 export const terminerSuivi = id => sauverSuivi(S.terminerSuivi(suivi(id), aujourdhui()));
 
-// Supprime le suivi et tous ses bilans.
+// Supprime le suivi, tous ses bilans et toutes ses séances de soin.
 export async function supprimerSuivi(id) {
   const lies = etat.bilans.filter(b => b.blessureId === id);
-  await db.appliquer([{ magasin: 'blessures', supprimer: id }, ...lies.map(b => ({ magasin: 'bilans', supprimer: b.id }))]);
+  const seances = etat.seancesSoin.filter(x => x.blessureId === id);
+  await db.appliquer([
+    { magasin: 'blessures', supprimer: id },
+    ...lies.map(b => ({ magasin: 'bilans', supprimer: b.id })),
+    ...seances.map(x => ({ magasin: 'seancesSoin', supprimer: x.id })),
+  ]);
   etat.blessures = etat.blessures.filter(s => s.id !== id);
   etat.bilans = etat.bilans.filter(b => b.blessureId !== id);
+  etat.seancesSoin = etat.seancesSoin.filter(x => x.blessureId !== id);
   notifier();
+}
+
+// Met les séances de soin futures « à faire » en accord avec les suivis (voir S.reconcilierSoin).
+export async function synchroniserSoin({ silencieux = false } = {}) {
+  const r = S.reconcilierSoin(etat.blessures, etat.seancesSoin, etat.bilans, aujourdhui());
+  if (!r.aMettre.length && !r.aSupprimer.length) return r;
+  await db.appliquer([
+    ...r.aSupprimer.map(id => ({ magasin: 'seancesSoin', supprimer: id })),
+    ...r.aMettre.map(x => ({ magasin: 'seancesSoin', mettre: x })),
+  ]);
+  const supprimees = new Set(r.aSupprimer);
+  etat.seancesSoin = etat.seancesSoin.filter(x => !supprimees.has(x.id));
+  r.aMettre.forEach(x => remplacerDans(etat.seancesSoin, x));
+  if (!silencieux) notifier();
+  return r;
+}
+
+const seanceSoinDu = (blessureId, date) => etat.seancesSoin.find(x => x.blessureId === blessureId && x.date === date) ?? null;
+
+// Change l'état d'une séance de soin et le reporte dans le bilan du jour s'il existe
+// (« faite » coche ses exercices, « à faire » ou « ratée » les décoche). Sans bilan, l'état de la séance fait foi :
+// le bilan créé plus tard partira de ses exercices cochés.
+export async function changerEtatSeanceSoin(id, etatSeance) {
+  if (!S.ETATS_SOIN.includes(etatSeance)) throw new D.ErreurMetier('État inconnu.');
+  const x = { ...seanceSoin(id), etat: etatSeance, modifieLe: Date.now() };
+  const ops = [{ magasin: 'seancesSoin', mettre: x }];
+  const b = etat.bilans.find(y => y.blessureId === x.blessureId && y.date === x.date);
+  const bMaj = b ? { ...b, exercices: S.exercicesBilanApresEtat(b, x, etatSeance), modifieLe: Date.now() } : null;
+  if (bMaj) ops.push({ magasin: 'bilans', mettre: bMaj });
+  await db.appliquer(ops);
+  remplacerDans(etat.seancesSoin, x);
+  if (bMaj) remplacerDans(etat.bilans, bMaj);
+  notifier();
+  return x;
 }
 
 // Crée ou remplace le bilan du jour indiqué (un seul bilan par jour et par suivi).
@@ -232,9 +277,15 @@ export async function enregistrerBilan(donnees) {
   // Bilan déplacé sur une date qui en avait déjà un : l'ancien est remplacé.
   const doublons = etat.bilans.filter(x => x.id !== b.id && x.blessureId === b.blessureId && x.date === b.date);
   doublons.forEach(x => ops.push({ magasin: 'bilans', supprimer: x.id }));
+  // Séance de soin du même jour : « faite » si tous ses exercices sont cochés, « à faire » si l'un a été décoché.
+  const seance = seanceSoinDu(b.blessureId, b.date);
+  const nouvelEtat = seance ? S.etatApresBilan(seance, b) : null;
+  const seanceMaj = seance && nouvelEtat !== seance.etat ? { ...seance, etat: nouvelEtat, modifieLe: Date.now() } : null;
+  if (seanceMaj) ops.push({ magasin: 'seancesSoin', mettre: seanceMaj });
   await db.appliquer(ops);
   etat.bilans = etat.bilans.filter(x => !doublons.includes(x));
   remplacerDans(etat.bilans, b);
+  if (seanceMaj) remplacerDans(etat.seancesSoin, seanceMaj);
   notifier();
   return b;
 }
@@ -265,5 +316,7 @@ export async function importer(donnees) {
   etat.realisees = donnees.realisees;
   etat.blessures = donnees.blessures ?? [];
   etat.bilans = donnees.bilans ?? [];
+  etat.seancesSoin = donnees.seancesSoin ?? [];
+  await synchroniserSoin({ silencieux: true });
   notifier();
 }

@@ -132,7 +132,8 @@ _(Section tenue à jour au fil des sessions.)_
 - **Bilan du jour** (un par jour et par suivi) : raideur au réveil, douleur à la marche et dans les escaliers (obligatoires, 0 à 10),
   douleur en courant, pendant les exercices, aux sautillements (facultatives), exercices faits, test des montées sur pointe
   (nombre + douleur), notes. Les bilans ne créent **pas** de séance réalisée.
-- **Exercices du jour** : dosage selon la semaine dans la phase ; un exercice « un jour sur deux » fait la veille est affiché « repos ».
+- **Exercices du jour** : dosage selon la semaine dans la phase ; les exercices « un jour sur deux » suivent une **alternance fixe**
+  depuis le début de la phase (jour d'exercice le 1er jour, puis tous les 2 jours), identique sur la carte, le bilan et le planning.
 - **Alertes** : raideur en hausse deux jours de suite ; course > 4/10 (pas de course pendant 7 jours) ; exercices > 4/10.
 - **Passage de phase** : l'application évalue les critères (durée minimale, dernières douleurs, raideur moyenne des 3 derniers bilans,
   test des montées) et **propose** le passage ; l'utilisateur confirme. Retour à la phase précédente possible. En fin de phase 3 :
@@ -144,8 +145,32 @@ _(Section tenue à jour au fil des sessions.)_
   strictement** (course et enchaînement). Le plan mémorise la phase de chaque suivi (`plan.soin`) ; un avertissement invite à le recalculer
   quand la phase a changé.
 - **Écrans** : carte verte sur l'accueil (phase, exercices du jour, bilan, alertes) ou lien « Suivi de blessure » s'il n'y en a pas ;
-  écran `#/soin` (`#/soin/<id>`, `#/soin/liste`) hors barre d'onglets ; pastille verte ✚ dans la semaine les jours d'exercices.
-- **Sauvegarde** : format 2 (ajout de `blessures` et `bilans`) ; les sauvegardes au format 1 restent importables.
+  écran `#/soin` (`#/soin/<id>`, `#/soin/liste`) hors barre d'onglets.
+- **Sauvegarde** : format 3 (format 2 : ajout de `blessures` et `bilans` ; format 3 : `seancesSoin`) ; les sauvegardes
+  aux formats 1 et 2 restent importables (listes absentes = vides, puis le planning de soin est régénéré).
+
+### Séances de soin dans le planning (lot 3, version 1.3.0)
+
+- **Stockage** : magasin IndexedDB dédié `seancesSoin` (et non `prevues` avec `source: 'soin'`). Les séances de soin sont ainsi
+  invisibles par construction pour le plan IA (calendrier, durées, plafond restant, séances conservées), les volumes hebdomadaires,
+  les compteurs « Prévu / Réalisé », la prochaine séance et la saisie rapide. Champs : `blessureId`, `date`, `phase`, `semaine`,
+  `exercices` (id, nom, dosage du jour), `etat` (`a_faire`, `faite`, `ratee`).
+- **Une séance par jour d'exercices et par suivi** : elle regroupe les exercices **obligatoires** du jour avec leur dosage
+  (`exercicesObligatoires` de `js/soin.js`). Pas de séance les jours sans exercice obligatoire (phases 2 et 3 : un jour sur deux) ;
+  l'isométrie facultative de la phase 2 n'en fait pas partie. Les séances sont obligatoires : elles ne dépendent pas du semainier
+  et ne comptent pas dans le plafond.
+- **Génération** (`reconcilierSoin`) : d'aujourd'hui à la fin prévue de la phase en cours (durée maximale, au moins 7 jours),
+  à l'ouverture de l'application et après chaque création, modification, changement de phase, retour en arrière, fin de suivi et import.
+  Seules les séances futures (aujourd'hui compris) « à faire » sont créées, mises à jour ou supprimées ; les séances passées,
+  faites ou ratées sont conservées. Supprimer un suivi supprime toutes ses séances.
+- **Lien avec le bilan du jour, dans les deux sens** : passer la séance à « Faite » coche ses exercices dans le bilan du jour
+  (s'il existe ; sinon ils seront précochés à la création du bilan) ; « À faire » ou « Ratée » les décoche. Enregistrer un bilan qui coche
+  tous les exercices de la séance la passe « Faite » ; en décocher un repasse une séance faite « À faire ». Supprimer un bilan ne change
+  pas l'état de la séance. Une séance créée un jour dont le bilan coche déjà tout naît « faite ».
+- **Affichage** (vert `--soin`) : onglet Plan (lignes vertes dans les semaines et dans « En retard »), semaine de l'accueil
+  (une pastille par séance, remplace l'ancienne pastille ✚ : pointillés = à faire, pleine ✓ = faite, rouge ✕ = ratée),
+  compteur « Soin » (faites / prévues de la semaine, « hors plafond ») sous Prévu / Réalisé. Détail d'une séance : feuille
+  « Séance de soin » (exercices, dosage, Marquer faite / ratée, Remettre à faire, Voir le suivi).
 
 ### Architecture
 
@@ -154,10 +179,11 @@ _(Section tenue à jour au fil des sessions.)_
   - `format.js` : formats français (dates, durées, allures, nombres) ;
   - `domaine.js` : règles métier pures (référentiels, cycle de vie, mutualisation, allure, alertes, agrégats) ;
   - `sauvegarde.js` : construction et validation de l'export JSON (pur) ;
-  - `soin.js` : suivi de blessure — programmes, bilans, exercices du jour, alertes, critères de passage, contraintes du plan IA (pur) ;
+  - `soin.js` : suivi de blessure — programmes, bilans, exercices du jour, alertes, critères de passage, contraintes du plan IA,
+    séances de soin du planning (génération, lien avec le bilan) (pur) ;
   - `ia.js` : contexte envoyé, prompt, schéma JSON de la réponse, validation, remplacement des séances (pur) ;
   - `ia-api.js` : appel de l'API Anthropic en streaming, essais et gestion des erreurs ;
-  - `db.js` : IndexedDB (base `dossard`, version 2) ; magasins `kv` (profil, semainier, réglages), `objectifs`, `prevues`, `realisees`, `blessures`, `bilans`
+  - `db.js` : IndexedDB (base `dossard`, version 3) ; magasins `kv` (profil, semainier, réglages), `objectifs`, `prevues`, `realisees`, `blessures`, `bilans`, `seancesSoin`
     — exportés (dont `kv.plan`) — et `appareil` (clé API, date du dernier export, première utilisation) — **jamais exporté** ;
   - `magasin.js` : état en mémoire + actions qui écrivent dans IndexedDB ;
   - `ui.js` : création d'éléments, feuilles modales, champs ; `miseajour.js` : service worker et bandeau de mise à jour ;
@@ -174,7 +200,8 @@ _(Section tenue à jour au fil des sessions.)_
 ### Tests (à lancer avant chaque livraison)
 
 - `node tests/regles.test.js` : règles métier (cycle de vie, mutualisation, allure, alertes, export/import).
-- `node tests/soin.test.js` : suivi de blessure (cycle de vie, bilans, exercices du jour, alertes, critères, contraintes et validation du plan IA, export/import).
+- `node tests/soin.test.js` : suivi de blessure (cycle de vie, bilans, exercices du jour, alertes, critères, contraintes et validation du plan IA,
+  séances de soin du planning : génération, régénération, lien avec le bilan, isolement du plan IA, export/import).
 - `node tests/ia.test.js` : génération IA (contexte, validation stricte, remplacement, streaming et essais avec API simulée).
 - `node tests/statique.test.js` : manifest, service worker, chemins relatifs, version, absence de secrets.
 - `node tests/e2e.cjs [dossier-captures]` : parcours complet dans Chromium (Playwright), servi sous `/dossard/`,

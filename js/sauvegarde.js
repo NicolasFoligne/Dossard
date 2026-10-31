@@ -2,8 +2,9 @@
 // et n'est jamais incluse dans l'export.
 import { profilParDefaut, semainierParDefaut, reglagesParDefaut, ErreurMetier } from './domaine.js';
 
-// 2 : ajout des suivis de blessure (blessures, bilans). Les sauvegardes au format 1 restent lisibles.
-export const FORMAT_SAUVEGARDE = 2;
+// 2 : ajout des suivis de blessure (blessures, bilans) · 3 : séances de soin du planning (seancesSoin).
+// Les sauvegardes aux formats 1 et 2 restent lisibles (listes absentes = vides).
+export const FORMAT_SAUVEGARDE = 3;
 
 export function construireExport(donnees, maintenant = Date.now()) {
   const reglages = { ...donnees.reglages };
@@ -22,6 +23,7 @@ export function construireExport(donnees, maintenant = Date.now()) {
       realisees: donnees.realisees,
       blessures: donnees.blessures ?? [],
       bilans: donnees.bilans ?? [],
+      seancesSoin: donnees.seancesSoin ?? [],
     },
   };
 }
@@ -50,13 +52,16 @@ export function lireImport(texte) {
   }
   exiger(d.objectifs.every(o => typeof o.dateEpreuve === 'string' && o.statut), 'objectif incomplet.');
   exiger([...d.prevues, ...d.realisees].every(s => typeof s.date === 'string' && typeof s.discipline === 'string'), 'séance incomplète.');
-  for (const cle of ['blessures', 'bilans']) {
+  for (const cle of ['blessures', 'bilans', 'seancesSoin']) {
     exiger(d[cle] === undefined || (Array.isArray(d[cle]) && d[cle].every(x => estObjet(x) && typeof x.id === 'string' && x.id)), `liste « ${cle} » invalide.`);
   }
   const blessures = d.blessures ?? [];
   const bilans = d.bilans ?? [];
   exiger(blessures.every(b => typeof b.programme === 'string' && typeof b.debut === 'string' && Number.isInteger(b.phase)), 'suivi de blessure incomplet.');
   exiger(bilans.every(b => typeof b.date === 'string' && typeof b.blessureId === 'string'), 'bilan de soin incomplet.');
+  const seancesSoin = d.seancesSoin ?? [];
+  exiger(seancesSoin.every(x => typeof x.date === 'string' && typeof x.blessureId === 'string' && Array.isArray(x.exercices)
+    && ['a_faire', 'faite', 'ratee'].includes(x.etat)), 'séance de soin incomplète.');
   const semainier = estObjet(d.semainier) && Array.isArray(d.semainier.jours) && d.semainier.jours.length === 7
     ? d.semainier : semainierParDefaut();
   const reglages = { ...reglagesParDefaut(), ...(estObjet(d.reglages) ? d.reglages : {}) };
@@ -71,6 +76,7 @@ export function lireImport(texte) {
     realisees: d.realisees,
     blessures,
     bilans,
+    seancesSoin,
     exporteLe: json.exporteLe ?? null,
   };
 }

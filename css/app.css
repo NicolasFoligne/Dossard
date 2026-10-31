@@ -730,3 +730,21 @@ details.test-montees .formulaire { padding-bottom: 10px; }
 .graphique .barre-soin path { fill: var(--soin); }
 .graphique .barre-soin .cible { fill: transparent; }
 .graphique .barre-soin:hover path, .graphique .barre-soin:focus path { opacity: 0.75; }
+
+/* ---------------------------------------------------------------- Séances de soin du planning */
+
+.ligne-seance.ligne-soin { border-left: 4px solid var(--soin); padding-left: 10px; }
+.ligne-soin .ligne-texte span { color: var(--soin); }
+.pastille.pastille-soin { width: 38px; height: 38px; font-size: 1rem; } /* cliquable : même taille que les autres pastilles */
+.pastille.pastille-soin.etat-a_faire { border-style: dashed; background: transparent; }
+.pastille.pastille-soin.etat-faite { border-style: solid; background: var(--soin); color: var(--soin-texte); }
+.pastille.pastille-soin.etat-ratee { border-style: solid; background: var(--danger-doux); border-color: var(--danger); color: var(--danger); }
+/* Compteur « Soin » : ligne pleine largeur sous Prévu / Réalisé (il ne se mélange pas aux compteurs d'entraînement). */
+.bilan-semaine > div.bilan-soin {
+  grid-column: 1 / -1; flex-direction: row; align-items: baseline; gap: 8px;
+  background: var(--soin-doux); color: var(--soin);
+}
+.bilan-soin > span:last-child { margin-left: auto; font-size: 0.85rem; }
+.bilan-soin .bilan-libelle { color: var(--soin); }
+.detail-soin .detail-titre { color: var(--soin); }
+.detail-soin .soin-exercices { margin: 0; }

@@ -64,22 +64,25 @@ test('bilan : notes de 0 à 10, un seul bilan par jour, test des montées comple
 
 // ------------------------------------------------------------ Séance du jour
 
-test('séance du jour : dosage selon la semaine de la phase, côté, repos un jour sur deux', () => {
+test('séance du jour : dosage selon la semaine de la phase, côté, alternance fixe un jour sur deux', () => {
   const s = nouveauSuivi({ debut: '2026-10-20' }); // semaine 2 le 30/10
-  const vide = S.seanceDuJour(s, [], '2026-10-20');
+  const vide = S.seanceDuJour(s, '2026-10-20');
   assert.equal(vide.semaine, 1);
   assert.deepEqual(vide.exercices.map(e => e.id), ['iso_debout']); // assis et montées pas encore introduits
   assert.match(vide.exercices[0].dosage, /2 pieds/);
 
-  const hier = S.enregistrerBilan({ blessureId: s.id, date: '2026-10-29', raideurMatin: 4, douleurMarche: 3, douleurEscaliers: 4, exercices: ['iso_debout', 'montees_lentes'] }, s, []);
-  const j = S.seanceDuJour(s, [hier], AUJ);
+  // 30/10 = 10 jours après le début de la phase : jour pair, jour d'exercice pour les « un jour sur deux ».
+  const j = S.seanceDuJour(s, AUJ);
   assert.equal(j.semaine, 2);
   assert.deepEqual(j.exercices.map(e => e.id), ['iso_debout', 'iso_assis', 'montees_lentes']);
   assert.equal(j.exercices[0].dosage, 'Jambe gauche seule · 5 × 45 s');
   assert.equal(j.exercices[0].repos, false); // tous les jours
-  assert.equal(j.exercices[2].repos, true); // un jour sur deux, fait hier
+  assert.equal(j.exercices[2].repos, false);
+  // Le lendemain : repos pour les montées, quel que soit le bilan de la veille (alternance fixe).
+  assert.equal(S.seanceDuJour(s, '2026-10-31').exercices[2].repos, true);
+  assert.equal(S.jourAlterneActif(s, '2026-11-01'), true);
 
-  const tard = S.seanceDuJour(s, [], '2026-12-30'); // au-delà de la dernière semaine décrite : dernier dosage
+  const tard = S.seanceDuJour(s, '2026-12-30'); // au-delà de la dernière semaine décrite : dernier dosage
   assert.match(tard.exercices[0].dosage, /10 kg/);
 });
 
@@ -212,22 +215,144 @@ test('plan IA : contexte, rejet des courses interdites, phase mémorisée et pla
 
 // ------------------------------------------------------------ Sauvegarde
 
-test('export/import : suivis et bilans inclus, anciennes sauvegardes (format 1) toujours lisibles', () => {
+test('export/import : suivis, bilans et séances de soin inclus, anciennes sauvegardes (formats 1 et 2) toujours lisibles', () => {
   const s = nouveauSuivi();
   const liste = bilans(s, AUJ, [{ raideurMatin: 4 }]);
-  const etat = { profil: D.profilParDefaut(), semainier: D.semainierParDefaut(), reglages: D.reglagesParDefaut(), plan: null, objectifs: [], prevues: [], realisees: [], blessures: [s], bilans: liste };
+  const seancesSoin = S.reconcilierSoin([s], [], liste, AUJ).aMettre;
+  const etat = { profil: D.profilParDefaut(), semainier: D.semainierParDefaut(), reglages: D.reglagesParDefaut(), plan: null, objectifs: [], prevues: [], realisees: [], blessures: [s], bilans: liste, seancesSoin };
   const json = construireExport(etat);
-  assert.equal(json.format, 2);
+  assert.equal(json.format, 3);
   const relu = lireImport(JSON.stringify(json));
   assert.deepEqual(relu.blessures, [s]);
   assert.deepEqual(relu.bilans, liste);
+  assert.deepEqual(relu.seancesSoin, seancesSoin);
   assert.match(resumeImport(relu), /1 suivi\(s\) de blessure et 1 bilan/);
+
+  const v2 = { ...json, format: 2, donnees: { ...json.donnees } };
+  delete v2.donnees.seancesSoin;
+  assert.deepEqual(lireImport(JSON.stringify(v2)).seancesSoin, []);
+  assert.deepEqual(lireImport(JSON.stringify(v2)).blessures, [s]);
 
   const ancien = { ...json, format: 1, donnees: { ...json.donnees } };
   delete ancien.donnees.blessures;
   delete ancien.donnees.bilans;
+  delete ancien.donnees.seancesSoin;
   const r = lireImport(JSON.stringify(ancien));
   assert.deepEqual(r.blessures, []);
   assert.deepEqual(r.bilans, []);
+  assert.deepEqual(r.seancesSoin, []);
   assert.throws(() => lireImport(JSON.stringify({ ...json, donnees: { ...json.donnees, bilans: [{ id: 'x' }] } })), /bilan/);
+  assert.throws(() => lireImport(JSON.stringify({ ...json, donnees: { ...json.donnees, seancesSoin: [{ id: 'x', date: AUJ, blessureId: s.id, exercices: [], etat: 'bof' }] } })), /séance de soin/);
+});
+
+// ------------------------------------------------------------ Séances de soin du planning
+
+test('planning de soin : une séance par jour d\'exercices, d\'aujourd\'hui à la fin prévue de la phase', () => {
+  const s = nouveauSuivi({ debut: '2026-10-20' }); // phase 1 : 4 semaines max → jusqu'au 16/11
+  assert.equal(S.finPlanificationSoin(s, AUJ), '2026-11-16');
+  const { aMettre, aSupprimer } = S.reconcilierSoin([s], [], [], AUJ, 1);
+  assert.deepEqual(aSupprimer, []);
+  assert.equal(aMettre.length, 18); // phase 1 : l'isométrie est quotidienne → une séance chaque jour du 30/10 au 16/11
+  assert.equal(aMettre[0].date, AUJ);
+  assert.equal(aMettre.at(-1).date, '2026-11-16');
+  assert.ok(aMettre.every(x => x.blessureId === s.id && x.etat === 'a_faire' && x.phase === 1));
+  // Alternance fixe : montées lentes les jours pairs depuis le début de phase (30/10, 01/11…), pas le 31/10.
+  assert.deepEqual(aMettre[0].exercices.map(e => e.id), ['iso_debout', 'iso_assis', 'montees_lentes']);
+  assert.deepEqual(aMettre[1].exercices.map(e => e.id), ['iso_debout', 'iso_assis']);
+  assert.equal(aMettre[0].exercices[2].dosage, 'Sur les 2 pieds · 3 × 15');
+  // Semaine 3 (à partir du 03/11) : dosage de la semaine suivante.
+  assert.equal(aMettre.find(x => x.date === '2026-11-03').exercices[0].dosage, 'Jambe gauche seule + sac 5 kg · 5 × 45 s');
+  // Phase dépassée : au moins 7 jours planifiés.
+  assert.equal(S.finPlanificationSoin(s, '2026-12-01'), '2026-12-07');
+  // Rien pour un suivi terminé.
+  assert.deepEqual(S.reconcilierSoin([S.terminerSuivi(s, AUJ)], [], [], AUJ).aMettre, []);
+});
+
+test('planning de soin : phases 2 et 3, pas de séance les jours de repos (isométrie facultative exclue)', () => {
+  const p2 = S.changerPhase(nouveauSuivi({ debut: '2026-10-01' }), 2, AUJ);
+  const seances = S.reconcilierSoin([p2], [], [], AUJ).aMettre;
+  assert.deepEqual(seances.slice(0, 3).map(x => x.date), [AUJ, '2026-11-01', '2026-11-03']); // un jour sur deux
+  assert.deepEqual(seances[0].exercices.map(e => e.id), ['montees_debout', 'montees_assis']);
+  assert.equal(seances.at(-1).date <= '2027-01-21', true); // 12 semaines max à partir du 30/10
+  const p3 = S.changerPhase(p2, 3, '2026-11-02');
+  const s3 = S.reconcilierSoin([p3], [], [], '2026-11-02').aMettre;
+  assert.deepEqual(s3[0].exercices.map(e => e.id), ['sautillements', 'montees_debout']);
+  assert.equal(s3[1].date, '2026-11-04');
+});
+
+test('planning de soin : régénération au changement de phase, retour en arrière et fin du suivi', () => {
+  const s = nouveauSuivi({ debut: '2026-10-20' });
+  let seances = S.reconcilierSoin([s], [], [], AUJ, 1).aMettre;
+  // Séance passée (hier) gardée telle quelle, séance du jour faite, séance de demain ratée.
+  const hier = { ...seances[0], id: 'hier', date: '2026-10-29' };
+  seances = [hier, { ...seances[0], etat: 'faite' }, { ...seances[1], etat: 'ratee' }, ...seances.slice(2)];
+  // Rien à refaire tant que le suivi ne change pas.
+  assert.deepEqual(S.reconcilierSoin([s], seances, [], AUJ), { aMettre: [], aSupprimer: [] });
+
+  // Passage en phase 2 aujourd'hui : les séances futures « à faire » de la phase 1 disparaissent ou sont mises à jour,
+  // la faite et la ratée sont conservées, la passée n'est pas touchée.
+  const p2 = S.changerPhase(s, 2, AUJ);
+  const r = S.reconcilierSoin([p2], seances, [], AUJ, 2);
+  const conservees = new Set([hier.id, seances[1].id, seances[2].id]);
+  assert.ok(r.aSupprimer.every(id => !conservees.has(id)));
+  assert.ok(r.aMettre.every(x => !conservees.has(x.id)));
+  const apres = [...seances.filter(x => !r.aSupprimer.includes(x.id) && !r.aMettre.some(y => y.id === x.id)), ...r.aMettre];
+  const futuresAFaire = apres.filter(x => x.date >= AUJ && x.etat === 'a_faire');
+  assert.ok(futuresAFaire.every(x => x.phase === 2 && x.exercices[0].id === 'montees_debout'));
+  assert.ok(apres.some(x => x.id === seances[1].id && x.etat === 'faite' && x.phase === 1));
+
+  // Retour en phase 1 : les séances de phase 2 à faire sont régénérées en phase 1.
+  const retour = S.changerPhase(p2, 1, AUJ);
+  const r2 = S.reconcilierSoin([retour], apres, [], AUJ, 3);
+  const apres2 = [...apres.filter(x => !r2.aSupprimer.includes(x.id) && !r2.aMettre.some(y => y.id === x.id)), ...r2.aMettre];
+  assert.ok(apres2.filter(x => x.date >= AUJ && x.etat === 'a_faire').every(x => x.phase === 1));
+
+  // Fin du suivi : toutes les séances futures « à faire » sont supprimées, les autres restent.
+  const fin = S.reconcilierSoin([S.terminerSuivi(retour, AUJ)], apres2, [], AUJ);
+  assert.deepEqual(fin.aMettre, []);
+  const restantes = apres2.filter(x => !fin.aSupprimer.includes(x.id));
+  assert.ok(restantes.every(x => x.date < AUJ || x.etat !== 'a_faire'));
+  assert.ok(restantes.some(x => x.id === hier.id));
+});
+
+test('planning de soin : lien avec le bilan du jour dans les deux sens', () => {
+  const s = nouveauSuivi({ debut: '2026-10-20' });
+  const [seance] = S.reconcilierSoin([s], [], [], AUJ).aMettre; // iso_debout, iso_assis, montees_lentes
+  const ids = seance.exercices.map(e => e.id);
+  const bilan = S.enregistrerBilan({ blessureId: s.id, date: AUJ, raideurMatin: 3, douleurMarche: 2, douleurEscaliers: 3, exercices: ['iso_debout'] }, s, []);
+
+  // Séance → bilan : « faite » coche ses exercices (sans toucher aux autres), « à faire » ou « ratée » les décoche.
+  const coches = S.exercicesBilanApresEtat({ ...bilan, exercices: ['iso_debout', 'autre'] }, seance, 'faite');
+  assert.deepEqual(coches.sort(), [...ids, 'autre'].sort());
+  assert.deepEqual(S.exercicesBilanApresEtat({ ...bilan, exercices: coches }, seance, 'a_faire'), ['autre']);
+  assert.deepEqual(S.exercicesBilanApresEtat({ ...bilan, exercices: coches }, seance, 'ratee'), ['autre']);
+
+  // Bilan → séance : tous cochés → faite ; un décoché → à faire ; ratée reste ratée tant que tout n'est pas coché.
+  assert.equal(S.etatApresBilan(seance, bilan), 'a_faire');
+  assert.equal(S.etatApresBilan(seance, { ...bilan, exercices: ids }), 'faite');
+  assert.equal(S.etatApresBilan({ ...seance, etat: 'faite' }, { ...bilan, exercices: ids.slice(1) }), 'a_faire');
+  assert.equal(S.etatApresBilan({ ...seance, etat: 'ratee' }, bilan), 'ratee');
+  assert.equal(S.etatApresBilan({ ...seance, etat: 'ratee' }, { ...bilan, exercices: ids }), 'faite');
+
+  // Séance créée un jour dont le bilan coche déjà tout : elle naît « faite ».
+  const complet = { ...bilan, exercices: ids };
+  assert.equal(S.reconcilierSoin([s], [], [complet], AUJ).aMettre[0].etat, 'faite');
+  assert.deepEqual(S.compteSoin([{ etat: 'faite' }, { etat: 'a_faire' }, { etat: 'ratee' }]), { nb: 3, faites: 1 });
+});
+
+test('planning de soin : invisible pour le plan IA (calendrier, plafond, séances conservées, volumes)', () => {
+  const s = nouveauSuivi({ debut: '2026-10-20' });
+  const semainier = D.semainierParDefaut();
+  semainier.plafondSeances = 2;
+  semainier.jours[5] = { disponible: true, dureeMaxMin: 60, disciplines: ['course', 'velo'] };
+  semainier.jours[6] = { disponible: true, dureeMaxMin: 90, disciplines: ['velo'] };
+  const objectif = D.demarrerObjectif(D.creerObjectif({ nom: '10 km', sport: 'course', type: '10km', dateEpreuve: '2027-01-17' }), AUJ);
+  const base = { profil: D.profilParDefaut(), semainier, objectifs: [objectif], prevues: [], realisees: [], blessures: [s], bilans: [] };
+  const sans = IA.construireContexte(base, AUJ);
+  const seancesSoin = S.reconcilierSoin([s], [], [], AUJ).aMettre;
+  const avec = IA.construireContexte({ ...base, seancesSoin }, AUJ);
+  assert.deepEqual(avec, sans);
+  assert.ok(!JSON.stringify(avec).includes('montees_lentes'));
+  assert.equal(avec.calendrier[0].plafondRestant, 2);
+  assert.ok(seancesSoin.length > 0);
 });
