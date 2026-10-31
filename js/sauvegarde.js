@@ -1,10 +1,12 @@
 // Export / import JSON (fonctions pures). La clé API vit dans le magasin « appareil »
 // et n'est jamais incluse dans l'export.
 import { profilParDefaut, semainierParDefaut, normaliserSemainier, reglagesParDefaut, ErreurMetier } from './domaine.js';
+import { PROGRAMMES } from './programmes.js';
+import { validerProgramme } from './blessure-ia.js';
 
-// 2 : ajout des suivis de blessure (blessures, bilans) · 3 : séances de soin du planning (seancesSoin).
-// Les sauvegardes aux formats 1 et 2 restent lisibles (listes absentes = vides).
-export const FORMAT_SAUVEGARDE = 3;
+// 2 : ajout des suivis de blessure (blessures, bilans) · 3 : séances de soin du planning (seancesSoin)
+// · 4 : programmes de soin personnels (programmes). Les sauvegardes aux formats 1 à 3 restent lisibles (listes absentes = vides).
+export const FORMAT_SAUVEGARDE = 4;
 
 export function construireExport(donnees, maintenant = Date.now()) {
   const reglages = { ...donnees.reglages };
@@ -24,6 +26,7 @@ export function construireExport(donnees, maintenant = Date.now()) {
       blessures: donnees.blessures ?? [],
       bilans: donnees.bilans ?? [],
       seancesSoin: donnees.seancesSoin ?? [],
+      programmes: donnees.programmes ?? [],
     },
   };
 }
@@ -52,7 +55,7 @@ export function lireImport(texte) {
   }
   exiger(d.objectifs.every(o => typeof o.dateEpreuve === 'string' && o.statut), 'objectif incomplet.');
   exiger([...d.prevues, ...d.realisees].every(s => typeof s.date === 'string' && typeof s.discipline === 'string'), 'séance incomplète.');
-  for (const cle of ['blessures', 'bilans', 'seancesSoin']) {
+  for (const cle of ['blessures', 'bilans', 'seancesSoin', 'programmes']) {
     exiger(d[cle] === undefined || (Array.isArray(d[cle]) && d[cle].every(x => estObjet(x) && typeof x.id === 'string' && x.id)), `liste « ${cle} » invalide.`);
   }
   const blessures = d.blessures ?? [];
@@ -62,6 +65,14 @@ export function lireImport(texte) {
   const seancesSoin = d.seancesSoin ?? [];
   exiger(seancesSoin.every(x => typeof x.date === 'string' && typeof x.blessureId === 'string' && Array.isArray(x.exercices)
     && ['a_faire', 'faite', 'ratee'].includes(x.etat)), 'séance de soin incomplète.');
+  // Programmes personnels : même vérification qu'au collage depuis l'IA ; chaque suivi doit avoir son programme.
+  const programmes = (d.programmes ?? []).map(x => {
+    const { programme, erreurs } = validerProgramme(x, { id: x.id, maintenant: x.creeLe });
+    exiger(programme, `programme de soin « ${x.libelle ?? x.id} » invalide (${erreurs[0]}).`);
+    return programme;
+  });
+  const connus = new Set([...PROGRAMMES, ...programmes].map(x => x.id));
+  exiger(blessures.every(b => connus.has(b.programme)), 'suivi de blessure dont le programme est absent.');
   const semainier = normaliserSemainier(estObjet(d.semainier) && Array.isArray(d.semainier.jours) && d.semainier.jours.length === 7
     ? d.semainier : semainierParDefaut());
   const reglages = { ...reglagesParDefaut(), ...(estObjet(d.reglages) ? d.reglages : {}) };
@@ -77,6 +88,7 @@ export function lireImport(texte) {
     blessures,
     bilans,
     seancesSoin,
+    programmes,
     exporteLe: json.exporteLe ?? null,
   };
 }
