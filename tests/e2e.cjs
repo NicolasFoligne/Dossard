@@ -282,7 +282,7 @@ async function main() {
     await page.locator('.graphique .barre-soin').waitFor();
     await page.goto(`${URL_APP}#/accueil`);
     await page.locator('.carte-soin', { hasText: 'Bilan du jour fait' }).waitFor();
-    await page.locator('.pastille-soin').waitFor();
+    await page.locator('.jour-auj .pastille-soin').waitFor();
     await capture('15-accueil-soin');
     await page.getByRole('link', { name: 'Plan', exact: true }).click();
     await page.locator('.soin-plan', { hasText: 'Tendon d\'Achille gauche en phase 1' }).waitFor();
@@ -295,6 +295,98 @@ async function main() {
     });
     assert.equal(contexteSoin.length, 1);
     assert.equal(contexteSoin[0].projection[0].courseAutorisee, false);
+
+    etape('Séances de soin dans le planning : pastille, compteur Soin, lien avec le bilan, onglet Plan, régénération');
+    const etatSoin = () => page.evaluate(async () => {
+      const M = await import('./js/magasin.js');
+      const F = await import('./js/format.js');
+      const auj = F.aujourdhui();
+      const seance = M.etat.seancesSoin.find(x => x.date === auj);
+      const bilan = M.etat.bilans.find(b => b.date === auj);
+      return { nb: M.etat.seancesSoin.length, etat: seance?.etat, phase: seance?.phase, exercices: seance?.exercices.map(e => e.id), bilan: bilan?.exercices ?? null,
+        futures: M.etat.seancesSoin.filter(x => x.date > auj).map(x => ({ etat: x.etat, phase: x.phase })) };
+    });
+    // Le bilan du jour cochait déjà tous les exercices de la séance (isométrie debout en semaine 1) : séance « faite ».
+    let soin = await etatSoin();
+    assert.equal(soin.etat, 'faite');
+    assert.deepEqual(soin.exercices, ['iso_debout']);
+    assert.ok(soin.futures.length >= 20 && soin.futures.every(x => x.etat === 'a_faire' && x.phase === 1), JSON.stringify(soin.futures.slice(0, 3)));
+    await page.goto(`${URL_APP}#/accueil`);
+    const pastilleDuJour = page.locator('.jour-auj .pastille-soin');
+    await pastilleDuJour.and(page.locator('.etat-faite')).waitFor();
+    assert.match(await page.locator('.bilan-soin').textContent(), /^Soin1\/\d+ faitehors plafond$/);
+    // Les compteurs d'entraînement ne comptent pas le soin.
+    const prevuSemaine = await page.evaluate(async () => {
+      const M = await import('./js/magasin.js'); const D = await import('./js/domaine.js'); const F = await import('./js/format.js');
+      return D.semaine(F.lundiDe(F.aujourdhui()), M.etat.prevues, M.etat.realisees).prevu.nb;
+    });
+    assert.match(await page.locator('.bilan-semaine > div').first().textContent(), new RegExp(`^Prévu${prevuSemaine} séance`));
+    await capture('16-accueil-seance-soin');
+
+    // Séance → bilan : « Remettre à faire » décoche l'exercice, « Marquer faite » le recoche.
+    await pastilleDuJour.click();
+    await page.locator('.feuille .detail-soin', { hasText: 'Sur les 2 pieds · 5 × 45 s' }).waitFor();
+    await capture('17-seance-soin');
+    await page.getByRole('button', { name: 'Remettre à faire' }).click();
+    await page.locator('.toast', { hasText: 'remise à faire' }).waitFor();
+    soin = await etatSoin();
+    assert.equal(soin.etat, 'a_faire');
+    assert.deepEqual(soin.bilan, []);
+    await pastilleDuJour.and(page.locator('.etat-a_faire')).waitFor();
+    await pastilleDuJour.click();
+    await page.getByRole('button', { name: 'Marquer faite' }).click();
+    await page.locator('.toast', { hasText: 'Séance de soin faite' }).waitFor();
+    soin = await etatSoin();
+    assert.equal(soin.etat, 'faite');
+    assert.deepEqual(soin.bilan, ['iso_debout']);
+
+    // Bilan → séance : décocher l'exercice repasse la séance « à faire », le recocher la repasse « faite ».
+    await page.locator('.carte-soin .ligne-bilan').click();
+    await page.locator('.feuille .puce', { hasText: 'Isométrie debout' }).click();
+    await page.locator('.feuille').getByRole('button', { name: 'Enregistrer' }).click();
+    await page.locator('.feuille').waitFor({ state: 'detached' });
+    await pastilleDuJour.and(page.locator('.etat-a_faire')).waitFor();
+    assert.equal((await etatSoin()).etat, 'a_faire');
+    await page.locator('.carte-soin .ligne-bilan').click();
+    await page.locator('.feuille .puce', { hasText: 'Isométrie debout' }).click();
+    await page.locator('.feuille').getByRole('button', { name: 'Enregistrer' }).click();
+    await page.locator('.feuille').waitFor({ state: 'detached' });
+    await pastilleDuJour.and(page.locator('.etat-faite')).waitFor();
+    assert.equal((await etatSoin()).etat, 'faite');
+
+    // Onglet Plan : séances de soin en vert, et « En retard » pour une séance passée encore à faire.
+    await page.evaluate(async () => {
+      const M = await import('./js/magasin.js'); const db = await import('./js/db.js'); const F = await import('./js/format.js');
+      const modele = M.etat.seancesSoin[0];
+      const passee = { ...modele, id: 'soin-hier', date: F.ajouterJours(F.aujourdhui(), -1), etat: 'a_faire' };
+      await db.mettre('seancesSoin', passee);
+      M.etat.seancesSoin.push(passee);
+    });
+    await page.getByRole('link', { name: 'Plan', exact: true }).click();
+    await page.locator('.ligne-soin', { hasText: 'Soin · Tendon d\'Achille gauche · 1 exercice' }).first().waitFor();
+    await page.locator('.carte', { hasText: 'En retard' }).locator('.ligne-soin').waitFor();
+    await capture('18-plan-soin');
+    await page.locator('.carte', { hasText: 'En retard' }).locator('.ligne-soin').click();
+    await page.getByRole('button', { name: 'Marquer ratée' }).click();
+    await page.locator('.toast', { hasText: 'ratée' }).waitFor();
+    assert.equal(await page.locator('.carte', { hasText: 'En retard' }).count(), 0);
+
+    // Changement de phase : les séances futures « à faire » sont régénérées (phase 2 : un jour sur deux),
+    // la séance faite du jour est conservée ; retour en phase 1 par le bouton de l'écran du suivi.
+    await page.evaluate(async () => {
+      const M = await import('./js/magasin.js');
+      await M.changerPhaseSuivi(M.etat.blessures[0].id, 2);
+    });
+    soin = await etatSoin();
+    assert.equal(soin.etat, 'faite');
+    assert.equal(soin.phase, 1);
+    assert.ok(soin.futures.length > 0 && soin.futures.every(x => x.phase === 2), JSON.stringify(soin.futures.slice(0, 3)));
+    await page.goto(`${URL_APP}#/soin`);
+    await page.getByRole('button', { name: 'Revenir en phase 1' }).click();
+    await page.locator('.boite').getByRole('button', { name: 'Revenir' }).click();
+    await page.locator('.boite', { hasText: 'Recalculer' }).getByRole('button', { name: 'Plus tard' }).click();
+    soin = await etatSoin();
+    assert.ok(soin.futures.every(x => x.phase === 1) && soin.futures.length >= 20);
 
     etape('Export JSON (sans clé API) puis import avec confirmation');
     await page.goto(`${URL_APP}#/reglages/sauvegarde`);
@@ -310,6 +402,8 @@ async function main() {
     assert.equal(exportJson.donnees.realisees.length, 2);
     assert.equal(exportJson.donnees.blessures.length, 1);
     assert.equal(exportJson.donnees.bilans.length, 1);
+    assert.equal(exportJson.format, 3);
+    assert.ok(exportJson.donnees.seancesSoin.length >= 20);
     assert.match(telechargement.suggestedFilename(), /^dossard-sauvegarde-\d{4}-\d{2}-\d{2}\.json$/);
     await page.getByText(/Dernier export : /).waitFor();
 
