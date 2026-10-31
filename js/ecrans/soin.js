@@ -6,6 +6,7 @@ import * as U from '../ui.js';
 import { ouvrirPlanIa } from './planIa.js';
 import { ouvrirAjoutBlessure } from './blessure.js';
 import { ouvrirSeanceGuidee } from './seanceGuidee.js';
+import { exerciceTouchable } from './fiche.js';
 
 const { h } = U;
 
@@ -38,26 +39,6 @@ function exercicesFaits(s, date) {
 
 export const LIBELLES_ETAT_SOIN = { a_faire: 'À faire', faite: 'Faite', ratee: 'Ratée' };
 
-// « Comment faire » : consignes détaillées d'un exercice (fiche du programme), repliées par défaut.
-export function ficheExercice(e, cote) {
-  const d = e?.details;
-  if (!d) return e?.consignes?.length ? h('ul.fiche-consignes', e.consignes.map(c => h('li', S.avecCote(c, cote)))) : null;
-  const t = v => S.avecCote(v, cote);
-  const utile = v => v && v !== '—';
-  return h('details.fiche',
-    h('summary', 'Comment faire'),
-    h('div.fiche-corps',
-      e.consignes?.length > 0 && h('ul.fiche-consignes', e.consignes.map(c => h('li', t(c)))),
-      utile(d.depart) && [h('h4', 'Position de départ'), h('p', t(d.depart))],
-      d.etapes?.length > 0 && [h('h4', 'Étapes'), h('ol', d.etapes.map(x => h('li', t(x))))],
-      utile(d.respiration) && [h('h4', 'Respiration'), h('p', t(d.respiration))],
-      utile(d.sensation) && [h('h4', 'Ce que vous devez ressentir'), h('p', t(d.sensation))],
-      d.erreurs?.length > 0 && [h('h4', 'Erreurs fréquentes'), h('ul', d.erreurs.map(x => h('li', t(x))))],
-      (utile(d.facile) || utile(d.difficile)) && h('p.aide',
-        utile(d.facile) && [h('strong', 'Plus facile : '), t(d.facile)], utile(d.facile) && utile(d.difficile) && h('br'),
-        utile(d.difficile) && [h('strong', 'Plus difficile : '), t(d.difficile)])));
-}
-
 // Exercice complet (fiche, rythme) d'une séance de soin, retrouvé dans la phase du programme.
 const exerciceDuProgramme = (s, numeroPhase, id) => (s ? S.phaseDe(s, numeroPhase)?.exercices.find(e => e.id === id) : null) ?? null;
 const seanceDuJourSoin = (s, date) => M.etat.seancesSoin.find(x => x.blessureId === s.id && x.date === date) ?? null;
@@ -83,7 +64,8 @@ export function ouvrirSeanceSoin(id) {
     h('p.detail-meta', [phase && `Phase ${phase.numero} « ${phase.nom} »`, `semaine ${x.semaine}`, `État : ${LIBELLES_ETAT_SOIN[x.etat]}`].filter(Boolean).join(' · ')),
     h('ul.soin-exercices', x.exercices.map(e => h('li', { class: x.etat === 'faite' ? 'fait' : '' },
       h('span.soin-coche', { 'aria-hidden': 'true' }, x.etat === 'faite' ? '✓' : '○'),
-      h('span', h('strong', e.nom), h('span.soin-dosage', e.dosage), ficheExercice(exerciceDuProgramme(s, x.phase, e.id), s?.cote))))),
+      exerciceTouchable(exerciceDuProgramme(s, x.phase, e.id) ?? { nom: e.nom }, s?.cote, h('strong', e.nom), h('span.soin-dosage', e.dosage))))),
+    h('p.aide', 'Touchez un exercice pour ouvrir sa fiche (schéma, étapes, que faire si douleur).'),
     h('button.bouton.large.bouton-soin', { type: 'button', onclick: () => ouvrirSeanceGuidee(x.id) }, '▶ Commencer la séance guidée'),
     h('p.aide', 'Séance obligatoire, en plus de l\'entraînement : elle ne dépend pas du semainier. Passer la séance à « Faite » coche ses exercices dans le bilan du jour.'),
     h('div.actions-formulaire',
@@ -116,7 +98,7 @@ export function carteSoinAccueil() {
         h('span.alerte-icone', '⚠️'), h('span', `Le plan d'entraînement ne tient pas compte de la phase ${s.phase} : recalculez-le.`)),
       h('ul.soin-exercices', seance.exercices.filter(e => !e.facultatif).map(e => h('li', { class: faits.has(e.id) ? 'fait' : e.repos ? 'repos' : '' },
         h('span.soin-coche', { 'aria-hidden': 'true' }, faits.has(e.id) ? '✓' : e.repos ? '–' : '○'),
-        h('span', h('strong', e.nom), h('span.soin-dosage', e.repos && !faits.has(e.id) ? 'Repos aujourd\'hui (un jour sur deux)' : e.dosage))))),
+        exerciceTouchable(e, s.cote, h('strong', e.nom), h('span.soin-dosage', e.repos && !faits.has(e.id) ? 'Repos aujourd\'hui (un jour sur deux)' : e.dosage))))),
       seanceDuJourSoin(s, auj) && h('button.bouton.large.bouton-soin', { type: 'button', onclick: () => ouvrirSeanceGuidee(seanceDuJourSoin(s, auj).id) }, '▶ Séance guidée'),
       passage.pret && h('a.soin-pret', { href: `#/soin/${s.id}` },
         passage.suivante ? `✓ Critères remplis : passer en phase ${passage.suivante.numero} ?` : '✓ Critères remplis : fin du programme ?'),
@@ -210,14 +192,11 @@ function ecranSuivi(s) {
 
     enCours && h('section.carte.carte-soin',
       h('h2', 'Aujourd\'hui'),
-      seance.exercices.map(e => h('details.exercice', { class: faits.has(e.id) ? 'fait' : '' },
-        h('summary',
-          h('span.soin-coche', { 'aria-hidden': 'true' }, faits.has(e.id) ? '✓' : e.repos ? '–' : '○'),
-          h('span.ligne-texte', h('strong', e.nom),
-            h('span', e.repos && !faits.has(e.id) ? `Repos aujourd'hui · ${e.frequence}` : `${e.dosage} · ${e.frequence}`))),
-        h('div.exercice-corps',
-          h('p.aide', `Cible : ${e.cible}`),
-          ficheExercice({ ...e, consignes: e.consignes }, s.cote)))),
+      h('ul.soin-exercices', seance.exercices.map(e => h('li', { class: faits.has(e.id) ? 'fait' : e.repos ? 'repos' : '' },
+        h('span.soin-coche', { 'aria-hidden': 'true' }, faits.has(e.id) ? '✓' : e.repos ? '–' : '○'),
+        exerciceTouchable(e, s.cote, h('strong', e.nom),
+          h('span.soin-dosage', e.repos && !faits.has(e.id) ? `Repos aujourd'hui · ${e.frequence}` : `${e.dosage} · ${e.frequence}`))))),
+      h('p.aide', 'Touchez un exercice pour ouvrir sa fiche.'),
       seanceDuJourSoin(s, auj) && h('button.bouton.large.bouton-soin', { type: 'button', onclick: () => ouvrirSeanceGuidee(seanceDuJourSoin(s, auj).id) }, '▶ Séance guidée'),
       h('p.soin-course', h('strong', '🏃 Course : '), phase.course.texte),
       phase.conseils.map(c => h('p.aide', `💡 ${S.avecCote(c, s.cote)}`)),
@@ -278,8 +257,7 @@ export function detailProgramme(prog, cote, phaseOuverte = null) {
       h('div.exercice-corps',
         h('p', p.but),
         p.exercices.map(e => h('div.programme-exercice',
-          h('strong', S.avecCote(e.nom, cote)), h('span.aide', ` · ${e.frequence}${e.facultatif ? ' · facultatif' : ''}`),
-          ficheExercice(e, cote),
+          exerciceTouchable(e, cote, h('strong', S.avecCote(e.nom, cote)), h('span.aide', `${e.frequence}${e.facultatif ? ' · facultatif' : ''}`)),
           h('p.aide', 'Progression : ' + e.dosage.map((d, i) => (d ? `sem. ${i + 1}${i === e.dosage.length - 1 && e.dosage.length > 1 ? '+' : ''} : ${S.avecCote(d, cote)}` : null)).filter(Boolean).join(' · ')))),
         h('p', h('strong', 'Course : '), p.course.texte),
         p.conseils.map(c => h('p.aide', `💡 ${S.avecCote(c, cote)}`)),
