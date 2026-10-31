@@ -37,19 +37,32 @@ async function main() {
       viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
       locale: 'fr-FR', timezoneId: 'Europe/Paris', acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'],
     });
-    // Voix de la séance guidée : on enregistre les annonces au lieu de les prononcer.
+    // Signaux de la séance guidée : on enregistre les annonces vocales, les bips (fréquences) et les vibrations.
     await contexte.addInitScript(() => {
       window.__paroles = [];
+      window.__bips = [];
+      window.__vibrations = [];
       if (window.speechSynthesis) {
-        window.speechSynthesis.speak = u => window.__paroles.push(u.text);
+        window.speechSynthesis.speak = u => { if (u.text.trim()) window.__paroles.push(u.text); };
         window.speechSynthesis.cancel = () => {};
+      }
+      navigator.vibrate = motif => { window.__vibrations.push(motif); return true; };
+      const Audio = window.AudioContext;
+      if (Audio) {
+        const creer = Audio.prototype.createOscillator;
+        Audio.prototype.createOscillator = function () {
+          const o = creer.call(this);
+          const demarrer = o.start.bind(o);
+          o.start = t => { window.__bips.push(o.frequency.value); demarrer(t); };
+          return o;
+        };
       }
     });
     const page = await contexte.newPage();
     page.on('pageerror', e => erreurs.push(`pageerror: ${e.message}`));
     page.on('console', m => { if (m.type() === 'error') erreurs.push(`console: ${m.text()}`); });
     page.on('response', r => { if (r.status() >= 400) erreurs.push(`HTTP ${r.status()} ${r.url()}`); });
-    const capture = async nom => { if (CAPTURES) await page.waitForTimeout(300); if (CAPTURES) await page.screenshot({ path: path.join(CAPTURES, `${nom}.png`), fullPage: true }); };
+    const capture = async nom => { if (CAPTURES) await page.waitForTimeout(300); if (CAPTURES) await page.screenshot({ path: path.join(CAPTURES, `${nom}.png`), fullPage: !(await page.locator('.feuille').count()) }); };
     const etape = t => console.log(`• ${t}`);
 
     etape('Chargement sous /dossard/');
@@ -458,33 +471,65 @@ async function main() {
     soin = await etatSoin();
     assert.deepEqual([...new Set(soin.futures.map(x => x.phase))], [1, 2, 3]);
 
-    etape('Séance de soin guidée : fiche « Comment faire », minuteur, voix, pause, tempo, fin');
+    etape('Fiche d\'exercice (tap) et séance de soin guidée : 3-2-1, voix, vibration, repos réglable, chrono horodaté, tempo, fin');
     await page.goto(`${URL_APP}#/accueil`);
     await page.locator('.jour-auj .pastille-soin').click();
     await page.getByRole('button', { name: 'Remettre à faire' }).click();
     await page.locator('.jour-auj .pastille-soin.etat-a_faire').click();
-    await page.locator('.feuille details.fiche summary').first().click();
-    await page.locator('.feuille .fiche-corps', { hasText: 'Position de départ' }).first().waitFor();
-    await page.getByText('Montez lentement sur la pointe des pieds jusqu\'à mi-hauteur').waitFor();
+    await page.locator('.feuille .exercice-touchable', { hasText: 'Isométrie debout, jambe tendue' }).click();
+    const fiche = page.locator('.feuille[aria-label="Isométrie debout, jambe tendue"]');
+    await fiche.locator('.fiche-schema svg.schema').waitFor();
+    for (const titre of ['Matériel', 'Position de départ', 'Étapes', 'Sensation attendue et intensité', 'Erreurs fréquentes', 'Si douleur']) {
+      await fiche.getByRole('heading', { name: titre }).waitFor();
+    }
+    await fiche.getByText('Montez lentement sur la pointe des pieds jusqu\'à mi-hauteur').waitFor();
+    await fiche.getByText(/^Objectif : Calmer la douleur du tendon/).waitFor();
     await capture('21-fiche-exercice');
+    await fiche.getByRole('button', { name: 'Fermer la fiche' }).click();
+    await fiche.waitFor({ state: 'detached' });
     await page.getByRole('button', { name: '▶ Commencer la séance guidée' }).click();
     const guidee = page.locator('.feuille .seance-guidee');
     await guidee.getByText('Sur les 2 pieds · 5 × 45 s').waitFor();
+    await guidee.getByText('Sur iPhone, désactivez le mode silencieux pour entendre les sons.', { exact: false }).waitFor();
+    // Repos entre séries : 60 s par défaut (isométrique), réglable par pas de 15 s.
+    assert.equal(await guidee.locator('.repos-valeur').first().textContent(), '1 minute');
+    await guidee.getByRole('button', { name: /^Plus de repos pour Isométrie debout/ }).click();
+    assert.equal(await guidee.locator('.repos-valeur').first().textContent(), '1 minute 15');
+    await capture('22-seance-depart');
     await guidee.getByRole('button', { name: '▶ Démarrer' }).click();
-    await guidee.locator('.minuteur-serie', { hasText: 'Série 1 / 5' }).waitFor();
+    // Préparation de 10 s : annonce de la première série, puis 3-2-1 et bip de départ.
+    await guidee.locator('.minuteur-phase', { hasText: 'Préparez-vous' }).waitFor();
+    let paroles = await page.evaluate(() => window.__paroles);
+    assert.deepEqual(paroles.slice(-2), ['Préparez-vous.', 'Isométrie debout, jambe tendue. Série 1 sur 5, contraction 45 secondes.']);
+    await guidee.locator('.minuteur-serie', { hasText: 'Série 1 / 5' }).waitFor({ timeout: 13000 });
+    const bips = await page.evaluate(() => window.__bips);
+    assert.deepEqual(bips.filter(f => f === 660).length, 3, `3-2-1 : ${bips}`);
+    assert.ok(bips.includes(990), 'bip de départ');
+    assert.ok((await page.evaluate(() => window.__vibrations)).includes(300), 'vibration au départ');
     assert.match(await guidee.locator('.minuteur-grand').textContent(), /^0:4[45]$/);
-    assert.ok((await page.evaluate(() => window.__paroles)).includes('Isométrie debout, jambe tendue. Série 1 sur 5. Tenez 45 secondes.'));
+    // La fiche s'ouvre pendant le chrono (bouton « ? ») ; le chrono continue dessous.
+    await guidee.getByRole('button', { name: 'Fiche de l\'exercice Isométrie debout, jambe tendue' }).click();
+    await page.locator('.feuille').last().locator('.fiche-schema svg').waitFor();
+    await capture('23-fiche-pendant-chrono');
     await page.waitForTimeout(2300); // le compte à rebours arrondit à la seconde supérieure
+    await page.locator('.feuille').last().getByRole('button', { name: 'Fermer la fiche' }).click();
     assert.match(await guidee.locator('.minuteur-grand').textContent(), /^0:4[123]$/);
-    await capture('22-seance-guidee');
+    await capture('24-seance-guidee');
     await guidee.getByRole('button', { name: '⏸ Pause' }).click();
     const fige = await guidee.locator('.minuteur-grand').textContent();
     await page.waitForTimeout(1200);
     assert.equal(await guidee.locator('.minuteur-grand').textContent(), fige);
     await guidee.getByRole('button', { name: '▶ Reprendre' }).click();
     await guidee.getByRole('button', { name: 'Passer l\'étape' }).click();
-    await guidee.locator('.minuteur-phase', { hasText: 'Récupération' }).waitFor();
-    assert.match(await guidee.locator('.minuteur-grand').textContent(), /^[12]:[0-5]\d$/);
+    await guidee.locator('.minuteur-phase', { hasText: 'Repos' }).waitFor();
+    assert.match(await guidee.locator('.minuteur-grand').textContent(), /^1:1[45]$/); // repos réglé à 1 min 15
+    assert.equal((await page.evaluate(() => window.__paroles)).at(-1), 'Repos, 1 minute 15.');
+    // Chrono horodaté : 80 s « perdues » (onglet en arrière-plan) sont rattrapées, on est dans la série 2.
+    await page.evaluate(() => { const maintenant = Date.now; Date.now = () => maintenant() + 80000; });
+    await guidee.locator('.minuteur-serie', { hasText: 'Série 2 / 5' }).waitFor();
+    assert.match(await guidee.locator('.minuteur-grand').textContent(), /^0:(39|4[0-1])$/);
+    paroles = await page.evaluate(() => window.__paroles);
+    assert.ok(paroles.includes('Série 2 sur 5, contraction 45 secondes.'), paroles.join(' | '));
     for (let k = 0; k < 20 && !(await guidee.getByText('Séance terminée').count()); k++) await guidee.getByRole('button', { name: 'Passer l\'étape' }).click();
     await guidee.getByText('Séance terminée').waitFor();
     await guidee.getByRole('button', { name: 'Marquer la séance faite' }).click();
@@ -495,7 +540,7 @@ async function main() {
     await page.locator('.ligne-soin', { hasText: 'Soin · Tendon d\'Achille gauche · 3 exercices' }).first().click();
     await page.getByRole('button', { name: '▶ Commencer la séance guidée' }).click();
     await guidee.getByRole('button', { name: '▶ Démarrer' }).click();
-    for (let k = 0; k < 30 && !(await guidee.locator('.minuteur-exercice', { hasText: 'Montées lentes sur pointe' }).count()); k++) {
+    for (let k = 0; k < 40 && !(await guidee.locator('.minuteur-exercice', { hasText: /^Montées lentes sur pointe$/ }).count()); k++) {
       await guidee.getByRole('button', { name: 'Passer l\'étape' }).click();
     }
     await guidee.locator('.minuteur-phase', { hasText: /^Monte · [123] s$/ }).waitFor();
@@ -505,11 +550,27 @@ async function main() {
     await guidee.getByRole('button', { name: 'Je compte moi-même' }).click();
     await guidee.getByRole('button', { name: '＋1' }).click();
     assert.equal(await guidee.locator('.minuteur-grand').textContent(), '1 / 15');
-    await capture('23-tempo');
+    await capture('25-tempo');
     await guidee.getByRole('button', { name: 'Arrêter la séance' }).click();
     await guidee.waitFor({ state: 'detached' }); // retour au détail de la séance
     await page.locator('.feuille').getByRole('button', { name: 'Fermer' }).click();
     await page.locator('.feuille').waitFor({ state: 'detached' });
+
+    etape('Réglages de la séance guidée : sons, voix, vibration, note iPhone, test du son');
+    await page.goto(`${URL_APP}#/reglages`);
+    await page.getByRole('link', { name: 'Séance guidée' }).click();
+    await page.getByText('Sur iPhone, désactivez le mode silencieux pour entendre les sons.', { exact: false }).waitFor();
+    await page.getByText('Rétablir les repos par défaut (1 modifié)').waitFor();
+    await page.locator('.interrupteur', { hasText: 'Vibration' }).click();
+    await page.evaluate(() => { window.__bips = []; window.__paroles = []; });
+    await page.getByRole('button', { name: '🔊 Tester les sons et la voix' }).click();
+    await page.waitForFunction(() => window.__paroles.length > 0);
+    assert.ok((await page.evaluate(() => window.__bips)).length >= 3);
+    await capture('26-reglages-seance');
+    await page.getByRole('button', { name: /Rétablir les repos par défaut/ }).click();
+    await page.locator('.toast', { hasText: 'Repos par défaut rétablis' }).waitFor();
+    const prefsSeance = await page.evaluate(async () => (await import('./js/magasin.js')).etat.appareil.preferencesSeance);
+    assert.deepEqual(prefsSeance, { voix: true, bips: true, vibration: false, repos: {} });
 
     etape('Ajouter une blessure : programme du catalogue depuis l\'onglet Objectifs');
     await page.getByRole('link', { name: 'Objectifs', exact: true }).click();
@@ -533,11 +594,13 @@ async function main() {
       test: { nom: 'Test du pont sur une jambe', unite: 'répétitions', consigne: 'Pont sur la jambe {cote} jusqu\'à la fatigue.' },
       phases: [
         { numero: 1, nom: 'Calmer', dureeMinSem: 2, dureeMaxSem: 3, but: 'Calmer.',
-          exercices: [{ id: 'iso_pont', nom: 'Pont isométrique', cible: 'Ischio-jambiers', frequence: 'Tous les jours', alterne: false, consignes: ['Tenez 30 s.'], dosage: ['5 × 30 s', 'Jambe {cote} seule · 5 × 30 s'] }],
+          exercices: [{ id: 'iso_pont', nom: 'Pont isométrique', cible: 'Ischio-jambiers', frequence: 'Tous les jours', alterne: false, consignes: ['Tenez 30 s.'], dosage: ['5 × 30 s', 'Jambe {cote} seule · 5 × 30 s'], fiche: 'pont', seance: { tempo: null, motTenue: 'contraction' } }],
           course: { texte: 'Footing facile 20 min.', autorisee: 'si_douleur_ok', intensites: ['facile'], types: ['endurance'], dureeMaxMin: 20 },
           criteres: [{ id: 'duree', type: 'duree', jours: 14, libelle: '2 semaines' }] },
         { numero: 2, nom: 'Renforcer', dureeMinSem: 4, dureeMaxSem: 8, but: 'Renforcer.',
-          exercices: [{ id: 'souleve', nom: 'Soulevé de terre jambes tendues', cible: 'Ischio-jambiers', frequence: 'Un jour sur deux', alterne: true, consignes: ['Dos droit.'], dosage: ['3 × 10'] }],
+          exercices: [{ id: 'souleve', nom: 'Soulevé de terre jambes tendues', cible: 'Ischio-jambiers', frequence: 'Un jour sur deux', alterne: true, consignes: ['Dos droit.'], dosage: ['3 × 10'],
+            details: { objectif: 'Renforcer l\'arrière des cuisses.', materiel: ['Haltères'], depart: 'Debout, haltères en main.', etapes: ['Penchez-vous dos droit.', 'Remontez en serrant les fessiers.'], respiration: 'Expirez en remontant.',
+              sensation: 'Étirement puis effort à l\'arrière des cuisses.', erreurs: ['Dos rond.'], adaptation: 'Douleur : charge plus légère, amplitude réduite.', facile: 'Sans charge.', difficile: 'Sur une jambe.' } }],
           course: { texte: 'Facile ≤ 45 min.', autorisee: true, intensites: ['facile'], types: ['endurance'], dureeMaxMin: 45 },
           criteres: [{ id: 'course', type: 'derniere', champ: 'douleurCourse', max: 1, fenetre: 7, libelle: 'Course ≤ 1/10' }] },
       ],
@@ -577,6 +640,16 @@ async function main() {
     await page.locator('.feuille .carte-soin h2', { hasText: 'Tendinopathie haute des ischio-jambiers' }).waitFor();
     await page.getByText('Jambe gauche seule · 5 × 30 s').waitFor({ state: 'attached' });
     await capture('20-programme-ia');
+    // Exercice hors bibliothèque : sa fiche fournie par l'IA, avec l'icône générique.
+    await page.locator('.feuille summary', { hasText: 'Phase 2 · Renforcer' }).click();
+    await page.locator('.feuille .exercice-touchable', { hasText: 'Soulevé de terre jambes tendues' }).click();
+    await page.locator('.feuille').last().locator('svg.schema-generique').waitFor();
+    await page.locator('.feuille').last().getByText('Douleur : charge plus légère, amplitude réduite.').waitFor();
+    await page.locator('.feuille').last().getByRole('button', { name: 'Fermer la fiche' }).click();
+    // Exercice de la bibliothèque : son schéma.
+    await page.locator('.feuille .exercice-touchable', { hasText: 'Pont isométrique' }).click();
+    await page.locator('.feuille').last().locator('svg.schema:not(.schema-generique)').waitFor();
+    await page.locator('.feuille').last().getByRole('button', { name: 'Fermer la fiche' }).click();
     await page.getByRole('button', { name: 'Enregistrer et démarrer le suivi' }).click();
     await page.locator('.toast', { hasText: 'Programme enregistré' }).waitFor();
     assert.match(await page.locator('.feuille [name=programme]').inputValue(), /^perso_/);
@@ -603,6 +676,7 @@ async function main() {
     const cheminExport = await telechargement.path();
     const exportTexte = fs.readFileSync(cheminExport, 'utf8');
     assert.ok(!exportTexte.includes('cle-de-test-locale'), 'la clé API ne doit pas être exportée');
+    assert.ok(!exportTexte.includes('preferencesSeance') && !exportTexte.includes('"vibration"'), 'les réglages de la séance guidée restent sur le téléphone');
     const exportJson = JSON.parse(exportTexte);
     assert.equal(exportJson.donnees.objectifs.length, 2);
     assert.equal(exportJson.donnees.realisees.length, 2);
