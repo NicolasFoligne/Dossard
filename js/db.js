@@ -1,12 +1,12 @@
 // Accès IndexedDB. Tout est stocké sur le téléphone.
 // Magasins exportés : kv (profil, semainier, réglages, plan IA), objectifs, prevues, realisees,
-// blessures (suivis de blessure) et bilans (bilans quotidiens des suivis).
+// blessures (suivis de blessure), bilans (bilans quotidiens des suivis) et seancesSoin (séances de soin du planning).
 // Magasin « appareil » : propre au téléphone, jamais exporté (clé API, date du dernier export…).
 
 const NOM_BASE = 'dossard';
-const VERSION_BASE = 2; // 2 : ajout des magasins « blessures » et « bilans »
-export const MAGASINS_LISTES = ['objectifs', 'prevues', 'realisees', 'blessures', 'bilans'];
-const INDEX_DATE = { objectifs: 'dateEpreuve', prevues: 'date', realisees: 'date', blessures: 'debut', bilans: 'date' };
+const VERSION_BASE = 3; // 2 : magasins « blessures » et « bilans » · 3 : magasin « seancesSoin »
+export const MAGASINS_LISTES = ['objectifs', 'prevues', 'realisees', 'blessures', 'bilans', 'seancesSoin'];
+const INDEX_DATE = { objectifs: 'dateEpreuve', prevues: 'date', realisees: 'date', blessures: 'debut', bilans: 'date', seancesSoin: 'date' };
 const MAGASINS_EXPORTES = ['kv', ...MAGASINS_LISTES];
 
 let base = null;
@@ -44,7 +44,7 @@ export async function ouvrir() {
 export async function lireTout() {
   const db = await ouvrir();
   const tx = db.transaction([...MAGASINS_EXPORTES, 'appareil'], 'readonly');
-  const [kv, objectifs, prevues, realisees, blessures, bilans, appareil] = await Promise.all(
+  const [kv, objectifs, prevues, realisees, blessures, bilans, seancesSoin, appareil] = await Promise.all(
     [...MAGASINS_EXPORTES, 'appareil'].map(n => promesse(tx.objectStore(n).getAll())));
   const valeurs = Object.fromEntries(kv.map(e => [e.cle, e.valeur]));
   return {
@@ -57,6 +57,7 @@ export async function lireTout() {
     realisees,
     blessures,
     bilans,
+    seancesSoin,
     appareil: Object.fromEntries(appareil.map(e => [e.cle, e.valeur])),
   };
 }
