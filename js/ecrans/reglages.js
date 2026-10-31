@@ -38,7 +38,7 @@ const zoneErreur = () => h('p.erreur', { role: 'alert' });
 function ecranProfil() {
   const p = M.etat.profil;
   const erreur = zoneErreur();
-  const form = h('form.formulaire.carte', { novalidate: true },
+  const form = h('form.formulaire.carte', { novalidate: true, autocomplete: 'off' },
     U.champ('Niveau', U.selection('niveau', [{ id: '', libelle: 'Non renseigné' }, ...D.NIVEAUX.map(n => ({ id: n, libelle: n }))], p.niveau)),
     U.champ('Allure habituelle en course', U.texte('allureHabituelle', p.allureHabituelle, { placeholder: 'ex. 5:30 /km en endurance' })),
     U.champ('Performances récentes', U.zoneTexte('performances', p.performances, { placeholder: 'ex. 10 km en 48:30 (mars 2026)' })),
@@ -70,24 +70,114 @@ function ecranProfil() {
 
 // ------------------------------------------------------------ Semainier
 
+// Éditeur des créneaux d'un jour : une ligne de temps de 5 h à 23 h par créneau, avec deux curseurs (début, fin)
+// au pas de 15 min. `creneaux` est modifié sur place ; `surChangement` est appelé à chaque modification.
+function editeurCreneaux(creneaux, nomJour, surChangement) {
+  const { CRENEAU_MIN: MIN, CRENEAU_MAX: MAX, CRENEAU_PAS: PAS } = D;
+  const pct = m => `${((m - MIN) / (MAX - MIN)) * 100}%`;
+  const liste = h('div.creneaux');
+  const total = h('p.aide.creneaux-total', { 'aria-live': 'polite' });
+  const reperes = () => h('div.creneau-reperes', { 'aria-hidden': 'true' },
+    [6, 9, 12, 15, 18, 21].map(heure => h('span', { style: { left: pct(heure * 60) } }, `${heure} h`)));
+
+  const majTotal = () => {
+    const minutes = creneaux.reduce((t, c) => t + c.fin - c.debut, 0);
+    total.textContent = creneaux.length ? `Disponible : ${F.duree(minutes * 60)}` : 'Aucun créneau : ajoutez-en au moins un.';
+  };
+
+  const ligne = c => {
+    const debut = h('input', { type: 'range', min: MIN, max: MAX, step: PAS, value: c.debut, 'aria-label': `${nomJour} : début du créneau` });
+    const fin = h('input', { type: 'range', min: MIN, max: MAX, step: PAS, value: c.fin, 'aria-label': `${nomJour} : fin du créneau` });
+    const plage = h('span.creneau-plage');
+    const autres = h('span.creneau-autres');
+    const libelle = h('strong.creneau-libelle');
+    const dessiner = () => {
+      plage.style.left = pct(c.debut);
+      plage.style.width = `${((c.fin - c.debut) / (MAX - MIN)) * 100}%`;
+      libelle.textContent = `${F.heureFr(c.debut)} – ${F.heureFr(c.fin)} · ${F.duree((c.fin - c.debut) * 60)}`;
+      debut.setAttribute('aria-valuetext', F.heureFr(c.debut));
+      fin.setAttribute('aria-valuetext', F.heureFr(c.fin));
+      // Les autres créneaux du jour, en grisé, pour éviter les chevauchements.
+      U.vider(autres, creneaux.filter(x => x !== c).map(x => h('span', { style: { left: pct(x.debut), width: `${((x.fin - x.debut) / (MAX - MIN)) * 100}%` } })));
+    };
+    // Un curseur qui rattrape l'autre le pousse : le créneau dure toujours au moins 15 min.
+    const bouger = source => {
+      let d = Number(debut.value);
+      let f = Number(fin.value);
+      if (source === debut) { d = Math.min(d, MAX - PAS); if (f - d < PAS) f = d + PAS; } else { f = Math.max(f, MIN + PAS); if (f - d < PAS) d = f - PAS; }
+      debut.value = d;
+      fin.value = f;
+      c.debut = d;
+      c.fin = f;
+      liste.querySelectorAll('.creneau').forEach(el => el.dessiner?.());
+      majTotal();
+      surChangement();
+    };
+    debut.addEventListener('input', () => bouger(debut));
+    fin.addEventListener('input', () => bouger(fin));
+    const el = h('div.creneau',
+      h('div.creneau-tete', libelle,
+        h('button.bouton-icone.petit', {
+          type: 'button', 'aria-label': `Supprimer le créneau de ${nomJour.toLowerCase()}`,
+          onclick: () => { creneaux.splice(creneaux.indexOf(c), 1); dessinerTout(); surChangement(); },
+        }, '✕')),
+      h('div.creneau-piste', autres, plage, debut, fin),
+      reperes());
+    el.dessiner = dessiner;
+    dessiner();
+    return el;
+  };
+
+  // Nouveau créneau : la première heure libre parmi 18 h, 7 h, 12 h, puis n'importe quelle heure de la journée.
+  const ajouter = () => {
+    const libre = d => d + 60 <= MAX && !creneaux.some(c => d < c.fin && d + 60 > c.debut);
+    const candidats = [18 * 60, 7 * 60, 12 * 60, ...Array.from({ length: (MAX - MIN) / PAS }, (_, k) => MIN + k * PAS)];
+    const d = candidats.find(libre);
+    if (d === undefined) { U.toast('Plus de place pour un créneau d\'une heure ce jour-là.', { erreur: true }); return; }
+    creneaux.push({ debut: d, fin: d + 60 });
+    creneaux.sort((a, b) => a.debut - b.debut);
+    dessinerTout();
+    surChangement();
+  };
+
+  const dessinerTout = () => {
+    U.vider(liste, creneaux.map(ligne));
+    majTotal();
+  };
+  dessinerTout();
+  return h('div.zone', liste, total,
+    h('button.bouton.secondaire.petit', { type: 'button', onclick: ajouter }, '＋ Ajouter un créneau'));
+}
+
 function ecranSemainier() {
-  const s = M.etat.semainier;
+  const s = D.normaliserSemainier(M.etat.semainier);
   const erreur = zoneErreur();
   const options = D.DISCIPLINES.map(d => ({ id: d.id, libelle: `${d.icone} ${d.court}` }));
+  // Copie de travail des créneaux, modifiée par les curseurs ; enregistrée au clic sur « Enregistrer ».
+  const creneaux = s.jours.map(j => j.creneaux.map(c => ({ ...c })));
   const blocsJours = D.JOURS.map((nom, i) => {
     const j = s.jours[i];
     const details = h('div.jour-details',
-      U.champ('Durée maximale (min)', U.nombre(`duree_${i}`, j.dureeMaxMin, { inputMode: 'numeric' })),
+      h('fieldset.champ', h('legend.champ-libelle', 'Créneaux disponibles'), editeurCreneaux(creneaux[i], nom, () => {})),
       h('fieldset.champ', h('legend.champ-libelle', 'Disciplines possibles'), U.puces(`disciplines_${i}`, options, j.disciplines)));
     const bascule = U.interrupteur(`dispo_${i}`, j.disponible, nom);
-    const majVisibilite = () => { details.hidden = !bascule.querySelector('input').checked; };
+    const majVisibilite = () => {
+      const dispo = bascule.querySelector('input').checked;
+      details.hidden = !dispo;
+      // Jour activé sans créneau : on en propose un d'office (18 h – 19 h).
+      if (dispo && !creneaux[i].length) {
+        creneaux[i].push({ debut: 18 * 60, fin: 19 * 60 });
+        U.vider(details.firstChild, h('legend.champ-libelle', 'Créneaux disponibles'), editeurCreneaux(creneaux[i], nom, () => {}));
+      }
+    };
     bascule.addEventListener('change', majVisibilite);
     majVisibilite();
     return h('div.jour-semainier', bascule, details);
   });
-  const form = h('form.formulaire', { novalidate: true },
+  const form = h('form.formulaire', { novalidate: true, autocomplete: 'off' },
     h('div.carte', U.champ('Plafond de séances par semaine', U.nombre('plafond', s.plafondSeances, { inputMode: 'numeric' }))),
-    h('div.carte', blocsJours),
+    h('div.carte', h('p.aide', 'Faites glisser les curseurs pour indiquer vos plages disponibles (de 5 h à 23 h, par quart d\'heure). '
+      + 'Le plan IA place chaque séance dans l\'un de ces créneaux.'), blocsJours),
     erreur,
     h('div.actions-formulaire', h('button.bouton.large', { type: 'submit' }, 'Enregistrer le semainier')));
   form.addEventListener('submit', async e => {
@@ -95,16 +185,15 @@ function ecranSemainier() {
     const ok = await U.tenter(async () => {
       const plafond = U.valeurNombre(form, 'plafond');
       if (plafond === null || plafond < 0 || !Number.isInteger(plafond)) throw new D.ErreurMetier('Le plafond doit être un nombre entier de séances.');
-      const jours = D.JOURS.map((_, i) => {
-        const duree = U.valeurNombre(form, `duree_${i}`);
-        return {
-          disponible: U.coche(form, `dispo_${i}`),
-          dureeMaxMin: duree && duree > 0 ? Math.round(duree) : null,
-          disciplines: U.lirePuces(form.querySelector(`[data-puces="disciplines_${i}"]`)),
-        };
+      const jours = D.JOURS.map((nom, i) => {
+        const disponible = U.coche(form, `dispo_${i}`);
+        const disciplines = U.lirePuces(form.querySelector(`[data-puces="disciplines_${i}"]`));
+        if (disponible && !disciplines.length) throw new D.ErreurMetier(`${nom} : choisissez au moins une discipline possible.`);
+        if (disponible && !creneaux[i].length) throw new D.ErreurMetier(`${nom} : ajoutez au moins un créneau.`);
+        const problemes = D.erreursCreneaux(creneaux[i]);
+        if (disponible && problemes.length) throw new D.ErreurMetier(`${nom} : ${problemes.join(', ')}.`);
+        return { disponible, creneaux: disponible ? creneaux[i].map(c => ({ ...c })) : [], disciplines };
       });
-      const sansDiscipline = jours.findIndex(j => j.disponible && j.disciplines.length === 0);
-      if (sansDiscipline >= 0) throw new D.ErreurMetier(`${D.JOURS[sansDiscipline]} : choisissez au moins une discipline possible.`);
       await M.enregistrerSemainier({ jours, plafondSeances: plafond });
       return true;
     }, erreur);
@@ -120,7 +209,7 @@ function ecranIa() {
   const dessiner = () => {
     const cle = M.etat.appareil.cleApi ?? '';
     const champCle = h('input', { type: 'password', name: 'cle', value: cle, autocomplete: 'off', spellcheck: false, placeholder: 'sk-ant-…', autocapitalize: 'off' });
-    const form = h('form.formulaire.carte', { novalidate: true },
+    const form = h('form.formulaire.carte', { novalidate: true, autocomplete: 'off' },
       h('p.aide', 'La clé sert à générer le plan d\'entraînement. Elle est stockée uniquement sur ce téléphone, envoyée seulement à l\'API Anthropic, et n\'est jamais incluse dans l\'export.'),
       U.champ('Clé API Anthropic', champCle, cle ? 'Une clé est enregistrée sur ce téléphone.' : 'Aucune clé enregistrée.'),
       h('label.interrupteur', h('input', { type: 'checkbox', onchange: e => { champCle.type = e.target.checked ? 'text' : 'password'; } }), h('span', 'Afficher la clé')),

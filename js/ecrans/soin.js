@@ -322,7 +322,7 @@ export function ouvrirSuivi(id = null) {
   const existant = id ? M.suivi(id) : null;
   U.ouvrirFeuille(existant ? 'Modifier le suivi' : 'Nouveau suivi de blessure', fermer => {
     const erreur = zoneErreur();
-    const form = h('form.formulaire', { novalidate: true });
+    const form = h('form.formulaire', { novalidate: true, autocomplete: 'off' });
     const prog = S.PROGRAMMES[0];
     form.append(
       U.champ('Programme', U.selection('programme', S.PROGRAMMES.map(p => ({ id: p.id, libelle: p.libelle })), existant?.programme ?? prog.id, { disabled: !!existant })),
@@ -373,7 +373,7 @@ export function ouvrirBilan({ suiviId, id = null, date = null }) {
 
   U.ouvrirFeuille(existant ? 'Modifier le bilan' : 'Bilan du jour', fermer => {
     const erreur = zoneErreur();
-    const form = h('form.formulaire.formulaire-soin', { novalidate: true });
+    const form = h('form.formulaire.formulaire-soin', { novalidate: true, autocomplete: 'off' });
     const zoneExercices = h('div.zone');
     const avant = S.criteresPassage(s, M.etat.bilans, auj).pret;
 

@@ -386,7 +386,7 @@ p { margin: 0; }
 .champ { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .champ-libelle { font-weight: 650; font-size: 0.93rem; padding: 0; }
 
-input[type="text"], input[type="password"], input[type="date"], select, textarea {
+input[type="text"], input[type="password"], input[type="date"], input[type="time"], select, textarea {
   font: inherit;
   font-size: 16px; /* évite le zoom automatique d'iOS */
   color: var(--texte);
@@ -398,7 +398,7 @@ input[type="text"], input[type="password"], input[type="date"], select, textarea
   width: 100%;
 }
 .carte input[type="text"], .carte input[type="password"], .carte input[type="date"], .carte select, .carte textarea,
-.feuille input[type="text"], .feuille input[type="date"], .feuille select, .feuille textarea { background: var(--fond); }
+.feuille input[type="text"], .feuille input[type="date"], .feuille input[type="time"], .feuille select, .feuille textarea { background: var(--fond); }
 textarea { resize: vertical; min-height: 72px; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
 input[type="date"] { appearance: none; -webkit-appearance: none; }
@@ -748,3 +748,41 @@ details.test-montees .formulaire { padding-bottom: 10px; }
 .bilan-soin .bilan-libelle { color: var(--soin); }
 .detail-soin .detail-titre { color: var(--soin); }
 .detail-soin .soin-exercices { margin: 0; }
+
+/* ---------------------------------------------------------------- Semainier : créneaux sur une ligne de temps */
+
+.creneaux { display: flex; flex-direction: column; gap: 14px; }
+.creneau { background: var(--surface-2); border-radius: 12px; padding: 6px 12px 8px; }
+.creneau-tete { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+.creneau-libelle { font-size: 0.95rem; }
+.bouton-icone.petit { font-size: 1.1rem; min-width: 44px; min-height: 44px; color: var(--texte-2); }
+.creneau-piste { position: relative; height: 44px; }
+.creneau-piste::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 8px; margin-top: -4px;
+  border-radius: 4px; background: var(--bordure);
+}
+.creneau-plage, .creneau-autres > span {
+  position: absolute; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; pointer-events: none;
+}
+.creneau-plage { background: var(--accent); }
+.creneau-autres > span { background: var(--texte-2); opacity: 0.35; }
+/* Deux curseurs superposés sur la même piste : seules les poignées captent le toucher. */
+.creneau-piste input[type="range"] {
+  -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 44px; margin: 0;
+  background: transparent; pointer-events: none;
+}
+.creneau-piste input[type="range"]::-webkit-slider-runnable-track { background: transparent; height: 44px; }
+.creneau-piste input[type="range"]::-moz-range-track { background: transparent; }
+.creneau-piste input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; pointer-events: auto; cursor: grab;
+  width: 30px; height: 30px; margin-top: 7px; border-radius: 50%;
+  background: var(--surface); border: 3px solid var(--accent); box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+}
+.creneau-piste input[type="range"]::-moz-range-thumb {
+  pointer-events: auto; cursor: grab; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface); border: 3px solid var(--accent);
+}
+.creneau-piste input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 3px solid var(--accent); outline-offset: 2px; }
+.creneau-reperes { position: relative; height: 16px; font-size: 0.7rem; color: var(--texte-2); }
+.creneau-reperes span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.creneaux-total { font-weight: 650; }
