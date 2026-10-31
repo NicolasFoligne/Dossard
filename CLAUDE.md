@@ -229,6 +229,26 @@ _(Section tenue à jour au fil des sessions.)_
   Supprimables depuis l'écran Suivi de blessure s'ils ne servent à aucun suivi.
 - **Sauvegarde** : format 4 (ajout de `programmes`, revérifiés à l'import ; un suivi dont le programme manque est refusé).
 
+### Fiches d'exercice et séance de soin guidée (version 1.6.0)
+
+- **Fiches détaillées** (`FICHES` de `js/programmes.js`, rattachées aux exercices par `FICHES_PAR_PROGRAMME`) : pour chaque
+  exercice, `details` = position de départ, étapes numérotées, respiration, ce qu'on doit ressentir (douleur tolérée), erreurs
+  fréquentes, versions plus facile / plus difficile ; affichées repliées (« Comment faire ») dans la séance de soin, l'écran du suivi
+  et le programme complet. Les programmes proposés par une IA peuvent fournir les mêmes champs (`details`, `seance`), demandés
+  par le texte copié ; ils sont validés (`lireDetails`, `lireSeance` de `js/blessure-ia.js`).
+- **Rythme** (`seance` de chaque exercice) : `tempo` = phases d'une répétition `[libellé, secondes]` (ex. Monte 3 s / Descends 3 s),
+  `null` = on compte soi-même (sauts, pas chassés) ; `recupS` = récupération entre séries ; `libelleTenue` = consigne d'une tenue.
+- **Dosage lu par la séance guidée** (`analyserDosage` de `js/seance-guidee.js`, partie après « · ») : « 5 × 45 s » (tenues),
+  « 3 × 15 » (répétitions), « 3 × 10 fois 10 s » (répétitions de tenues, 3 s de relâchement), « 2 min » / « 1 à 2 min » (durée,
+  borne haute), « par côté » / « par jambe » (chaque série des deux côtés), sinon exercice libre (« C'est fait »).
+- **Séance guidée** (`ecrans/seanceGuidee.js`) : « ▶ Commencer la séance guidée » (détail d'une séance de soin) ou « ▶ Séance guidée »
+  (carte verte de l'accueil, écran du suivi). Enchaîne exercices, séries, récupérations et une préparation de 15 s avant l'exercice
+  suivant ; grand compte à rebours, tempo guidé qui compte seul les répétitions (« Je compte moi-même » : bouton ＋1), pause,
+  passer, recommencer / revenir ; écran maintenu allumé ; à la fin, « Marquer la séance faite » (reporté dans le bilan du jour,
+  puis toutes les feuilles se ferment). Signaux : bips (Web Audio) et voix française (synthèse vocale) — annonces d'étape,
+  phases du tempo, 3 bips avant la fin d'une tenue ; voix et bips désactivables (`appareil.preferencesSeance`, jamais exporté).
+  Pas de vibration (indisponible sur iPhone dans une application web).
+
 ### Architecture
 
 - `index.html`, `manifest.webmanifest`, `sw.js` à la racine ; `.nojekyll` pour que GitHub Pages serve les fichiers tels quels.
@@ -238,6 +258,7 @@ _(Section tenue à jour au fil des sessions.)_
   - `sauvegarde.js` : construction et validation de l'export JSON (pur) ;
   - `programmes.js` : catalogue des programmes de soin (contenu générique) ;
   - `blessure-ia.js` : nouvelle blessure — texte à copier dans une IA, validation du programme collé (pur) ;
+  - `seance-guidee.js` : séance de soin guidée — lecture du dosage, étapes, tempo (pur) ;
   - `soin.js` : suivi de blessure — référentiel des programmes (catalogue + personnels), bilans, exercices du jour, alertes, critères de passage, contraintes du plan IA,
     séances de soin du planning (génération, lien avec le bilan) (pur) ;
   - `ia.js` : contexte envoyé, prompt, schéma JSON de la réponse, validation, remplacement des séances (pur) ;
@@ -247,7 +268,7 @@ _(Section tenue à jour au fil des sessions.)_
   - `magasin.js` : état en mémoire + actions qui écrivent dans IndexedDB ;
   - `ui.js` : création d'éléments, feuilles modales, champs ; `miseajour.js` : service worker et bandeau de mise à jour ;
   - `ecrans/` : accueil, plan, planIa (génération, mode secours, aperçu), objectifs, historique, réglages, formulaires, soin (suivi de blessure),
-    blessure (ajouter une blessure : catalogue, description pour l'IA, programme collé).
+    blessure (ajouter une blessure : catalogue, description pour l'IA, programme collé), seanceGuidee (minuteur, tempo, voix).
 - Navigation par ancre (`#/accueil`, `#/plan`, `#/objectifs`, `#/historique`, `#/reglages[/profil|semainier|ia|sauvegarde|apropos]`, `#/soin[/<id>|/liste]`).
 - L'onglet **Plan** : carte du plan IA (phase, analyse, « Recalculer le plan »), séances prévues (4 semaines affichées, puis bouton « Afficher les semaines suivantes »), ajout manuel.
 
@@ -262,7 +283,8 @@ _(Section tenue à jour au fil des sessions.)_
 - `node tests/regles.test.js` : règles métier (cycle de vie, mutualisation, allure, alertes, export/import).
 - `node tests/soin.test.js` : suivi de blessure (cycle de vie, bilans, exercices du jour, alertes, critères, contraintes et validation du plan IA,
   séances de soin du planning : génération, régénération, lien avec le bilan, isolement du plan IA, export/import ;
-  catalogue, programmes proposés par une IA : validation, refus motivés, texte pour l'IA, sauvegarde).
+  catalogue, programmes proposés par une IA : validation, refus motivés, texte pour l'IA, sauvegarde ;
+  fiches et séance guidée : dosages, étapes, tempo, couverture des fiches du catalogue).
 - `node tests/ia.test.js` : génération IA (contexte, validation stricte, remplacement, streaming et essais avec API simulée).
 - `node tests/statique.test.js` : manifest, service worker, chemins relatifs, version, absence de secrets.
 - `node tests/e2e.cjs [dossier-captures]` : parcours complet dans Chromium (Playwright), servi sous `/dossard/`,
