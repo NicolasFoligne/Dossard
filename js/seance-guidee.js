@@ -1,5 +1,5 @@
-// Séance de soin guidée : lecture du dosage, enchaînement des étapes (tenues, répétitions au tempo, récupérations)
-// et position dans un tempo. Règles pures (sans DOM), testées par tests/soin.test.js.
+// Séance de soin guidée : lecture du dosage, enchaînement des étapes (tenues, répétitions au tempo, repos), annonces
+// de la voix, position dans un tempo et chrono fondé sur l'horodatage. Règles pures (sans DOM), testées par tests/soin.test.js.
 
 const RELACHE_S = 3; // relâchement entre deux tenues courtes (ex. « 3 × 10 fois 10 s »)
 const TRANSITION_S = 15; // préparation avant l'exercice suivant
@@ -28,44 +28,81 @@ export function dureeParlee(s) {
   return `${m} minute${m > 1 ? 's' : ''}${r ? ` ${r}` : ''}`;
 }
 
-// Liste des étapes de la séance. `exercices` : [{ id, nom, dosage, seance? }] (dosage du jour, côté déjà remplacé).
-export function etapesSeance(exercices) {
+// Clé du repos réglable d'un exercice (préférences de la séance guidée) : l'exercice de la bibliothèque, sinon son id.
+export const cleRepos = e => e.fiche ?? e.id;
+
+// Repos entre deux séries (secondes) : réglage de l'utilisateur, sinon rythme de la fiche, sinon 60 s (120 s si « lourdes »).
+export function reposDe(e, reglages = {}) {
+  const r = reglages[cleRepos(e)];
+  if (Number.isInteger(r) && r >= 0) return r;
+  return e.seance?.recupS ?? (/lourd/i.test(e.dosage ?? '') ? 120 : 60);
+}
+
+const PREPA_DEBUT_S = 10; // préparation avant le premier exercice
+const PREPA_COURTE_S = 5; // entre deux séries sans repos
+const majuscule = t => (t ? t[0].toUpperCase() + t.slice(1) : t);
+
+// Ce qu'annonce la voix au début d'une série : « Série 2 sur 5, contraction 30 secondes ».
+function annonceSerie(e, a, seance, serie, cote) {
+  const quoi = a.mode === 'tenue' || a.mode === 'duree'
+    ? `${seance.motTenue ?? (seance.isometrique ? 'contraction' : 'tenue')} ${dureeParlee(a.dureeS)}`
+    : a.mode === 'tenues' ? `${a.reps} fois ${dureeParlee(a.tenueS)}`
+      : a.mode === 'reps' ? `${a.reps} répétitions${seance.tempo ? '' : ', à votre rythme'}` : e.dosage;
+  const parties = [a.series > 1 ? `Série ${serie} sur ${a.series}` : null, cote, quoi].filter(Boolean);
+  return majuscule(parties.join(', '));
+}
+
+// Liste des étapes de la séance. `exercices` : [{ id, nom, dosage, seance?, fiche? }] (dosage du jour, côté déjà remplacé ;
+// `seance` = rythme complet, voir seanceDe de js/exercices.js). `repos` : repos choisis par l'utilisateur, par cleRepos.
+// Étapes de travail : tenue, tempo, compteur, libre. Pauses minutées : prepa (avant le premier exercice, ou entre deux séries
+// sans repos), recup (repos entre deux séries), transition (avant l'exercice suivant) ; chacune porte l'annonce de la série
+// qui suit (`suivante`), dite par la voix avant le décompte 3-2-1.
+export function etapesSeance(exercices, { repos = {} } = {}) {
   const etapes = [];
+  const pause = (base, type, dureeS, libelle, annonce) => etapes.push({ ...base, type, dureeS, libelle, annonce });
   exercices.forEach((e, i) => {
     const a = analyserDosage(e.dosage);
     const seance = e.seance ?? {};
-    const recupS = seance.recupS ?? (/lourd/i.test(e.dosage) ? 120 : 60);
+    const reposS = reposDe(e, repos);
     const libelleTenue = seance.libelleTenue ?? 'Tenez';
-    const exercice = { id: e.id, nom: e.nom, dosage: e.dosage, index: i + 1, total: exercices.length };
+    const exercice = { id: e.id, fiche: e.fiche ?? null, nom: e.nom, dosage: e.dosage, index: i + 1, total: exercices.length, reposS };
+    if (i === 0) pause({ exercice }, 'prepa', PREPA_DEBUT_S, 'Préparez-vous', 'Préparez-vous.');
     const cotes = a.parCote ? ['premier côté', 'second côté'] : [null];
     for (let serie = 1; serie <= a.series; serie++) {
       cotes.forEach((cote, k) => {
         const base = { exercice, serie, series: a.series, cote };
-        const debut = `${e.nom}. ${a.series > 1 ? `Série ${serie} sur ${a.series}. ` : ''}${cote ? `${cote[0].toUpperCase()}${cote.slice(1)}. ` : ''}`;
+        const premiere = serie === 1 && k === 0;
+        const annonce = `${premiere ? `${e.nom}. ` : ''}${annonceSerie(e, a, seance, serie, cote)}.`;
         if (a.mode === 'tenue' || a.mode === 'duree') {
-          etapes.push({ ...base, type: 'tenue', dureeS: a.dureeS, libelle: libelleTenue, annonce: `${debut}${libelleTenue} ${dureeParlee(a.dureeS)}.` });
+          etapes.push({ ...base, type: 'tenue', dureeS: a.dureeS, libelle: libelleTenue, annonce });
         } else if (a.mode === 'tenues') {
-          etapes.push({ ...base, type: 'tempo', reps: a.reps, phases: [[libelleTenue, a.tenueS], ['Relâchez', RELACHE_S]], annonce: `${debut}${a.reps} fois ${dureeParlee(a.tenueS)}.` });
+          etapes.push({ ...base, type: 'tempo', reps: a.reps, phases: [[libelleTenue, a.tenueS], ['Relâchez', RELACHE_S]], annonce });
         } else if (a.mode === 'reps' && seance.tempo) {
-          etapes.push({ ...base, type: 'tempo', reps: a.reps, phases: seance.tempo, annonce: `${debut}${a.reps} répétitions.` });
+          etapes.push({ ...base, type: 'tempo', reps: a.reps, phases: seance.tempo, annonce });
         } else if (a.mode === 'reps') {
-          etapes.push({ ...base, type: 'compteur', reps: a.reps, annonce: `${debut}${a.reps} répétitions, à votre rythme.` });
+          etapes.push({ ...base, type: 'compteur', reps: a.reps, annonce });
         } else {
           etapes.push({ ...base, type: 'libre', annonce: `${e.nom}. ${e.dosage}.` });
         }
         const derniere = serie === a.series && k === cotes.length - 1;
-        if (!derniere && recupS > 0) {
-          etapes.push({ ...base, type: 'recup', dureeS: recupS, libelle: 'Récupération', annonce: `Récupération, ${dureeParlee(recupS)}.` });
-        }
+        if (derniere) return;
+        if (reposS > 0) pause(base, 'recup', reposS, 'Repos', `Repos, ${dureeParlee(reposS)}.`);
+        else pause(base, 'prepa', PREPA_COURTE_S, 'Préparez-vous', cote && k === 0 ? 'Changez de côté.' : '');
       });
     }
     const suivant = exercices[i + 1];
     if (suivant) {
-      etapes.push({ exercice, type: 'transition', dureeS: TRANSITION_S, libelle: 'Préparez-vous', suivant: suivant.nom, annonce: `Exercice suivant : ${suivant.nom}.` });
+      etapes.push({ exercice, type: 'transition', dureeS: TRANSITION_S, libelle: 'Préparez-vous', suivant: suivant.nom, annonce: 'Exercice terminé.' });
     }
   });
+  // Chaque pause annonce la série qui la suit.
+  etapes.forEach((x, k) => { if (PAUSES.has(x.type) && etapes[k + 1]) x.suivante = etapes[k + 1].annonce; });
   return etapes;
 }
+
+export const PAUSES = new Set(['prepa', 'recup', 'transition']);
+// Étapes minutées (elles s'enchaînent seules) ; un tempo compté à la main (`manuel`) ne l'est pas.
+export const estMinutee = (e, manuel = false) => PAUSES.has(e.type) || e.type === 'tenue' || (e.type === 'tempo' && !manuel);
 
 const dureeCycle = phases => phases.reduce((s, [, d]) => s + d, 0);
 
@@ -77,6 +114,21 @@ export function dureeEtape(etape) {
   return etape.dureeS;
 }
 export const dureeEstimee = etapes => etapes.reduce((s, e) => s + dureeEtape(e), 0);
+
+// Chrono fondé sur l'horodatage : l'étape `i` a commencé à `debutMs`. Si l'onglet a été ralenti ou mis en arrière-plan,
+// passe les étapes minutées déjà terminées (chacune commence exactement à la fin de la précédente) et s'arrête sur une étape
+// non minutée. Renvoie { i, debutMs, fini } ; `fini` : la dernière étape est terminée.
+export function rattraper(etapes, i, debutMs, maintenantMs) {
+  let k = i;
+  let debut = debutMs;
+  while (k < etapes.length && estMinutee(etapes[k])) {
+    const finMs = debut + dureeEtape(etapes[k]) * 1000;
+    if (maintenantMs < finMs) break;
+    debut = finMs;
+    k++;
+  }
+  return { i: k, debutMs: debut, fini: k >= etapes.length };
+}
 
 // Où en est-on dans un tempo après `ecouleS` secondes ? { rep (1 à reps), phase, libelle, resteS, fini }.
 export function positionTempo(phases, reps, ecouleS) {
